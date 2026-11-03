@@ -1,0 +1,138 @@
+{
+ "edges": [
+  -0.18084827892495572,
+  0.19484815596319008
+ ],
+ "s1": {
+  "logloss_skill": {
+   "static_logistic": 2.137,
+   "decile_x_regime": 2.085
+  },
+  "top10_calm": {
+   "realized": 0.6792,
+   "static": 0.6852,
+   "table": 0.6712
+  },
+  "skill_calm": {
+   "static": 3.14,
+   "table": 3.077
+  },
+  "top10_normal": {
+   "realized": 0.6643,
+   "static": 0.6775,
+   "table": 0.6634
+  },
+  "skill_normal": {
+   "static": 2.034,
+   "table": 1.978
+  },
+  "top10_stormy": {
+   "realized": 0.677,
+   "static": 0.675,
+   "table": 0.6624
+  },
+  "skill_stormy": {
+   "static": 1.295,
+   "table": 1.259
+  }
+ },
+ "f1": {
+  "logloss_skill": {
+   "static_logistic": 0.855,
+   "decile_x_regime": 0.819
+  },
+  "top10_calm": {
+   "realized": 0.615,
+   "static": 0.6248,
+   "table": 0.6044
+  },
+  "skill_calm": {
+   "static": 1.129,
+   "table": 1.097
+  },
+  "top10_normal": {
+   "realized": 0.6085,
+   "static": 0.62,
+   "table": 0.6086
+  },
+  "skill_normal": {
+   "static": 0.803,
+   "table": 0.766
+  },
+  "top10_stormy": {
+   "realized": 0.6067,
+   "static": 0.6204,
+   "table": 0.6046
+  },
+  "skill_stormy": {
+   "static": 0.631,
+   "table": 0.592
+  }
+ },
+ "s5": {
+  "logloss_skill": {
+   "static_logistic": 0.499,
+   "decile_x_regime": 0.472
+  },
+  "top10_calm": {
+   "realized": 0.5862,
+   "static": 0.5919,
+   "table": 0.5802
+  },
+  "skill_calm": {
+   "static": 0.66,
+   "table": 0.639
+  },
+  "top10_normal": {
+   "realized": 0.5807,
+   "static": 0.584,
+   "table": 0.5813
+  },
+  "skill_normal": {
+   "static": 0.39,
+   "table": 0.332
+  },
+  "top10_stormy": {
+   "realized": 0.6055,
+   "static": 0.5827,
+   "table": 0.5883
+  },
+  "skill_stormy": {
+   "static": 0.421,
+   "table": 0.419
+  }
+ },
+ "f5": {
+  "logloss_skill": {
+   "static_logistic": 0.276,
+   "decile_x_regime": 0.253
+  },
+  "top10_calm": {
+   "realized": 0.5663,
+   "static": 0.5689,
+   "table": 0.5698
+  },
+  "skill_calm": {
+   "static": 0.262,
+   "table": 0.257
+  },
+  "top10_normal": {
+   "realized": 0.574,
+   "static": 0.568,
+   "table": 0.5784
+  },
+  "skill_normal": {
+   "static": 0.247,
+   "table": 0.205
+  },
+  "top10_stormy": {
+   "realized": 0.5817,
+   "static": 0.5694,
+   "table": 0.5737
+  },
+  "skill_stormy": {
+   "static": 0.292,
+   "table": 0.27
+  }
+ }
+}

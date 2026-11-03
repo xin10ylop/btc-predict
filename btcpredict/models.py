@@ -22,7 +22,7 @@ def lgbm_factory(params: dict | None = None, rounds: int = 600, clip: float = CL
         if feature_subset is not None:
             Xtr, Xte = Xtr[feature_subset], Xte[feature_subset]
         y = np.clip(ytr.values, -clip, clip)
-        ds = lgb.Dataset(Xtr.values, y, weight=wtr, free_raw_data=True)
+        ds = lgb.Dataset(Xtr.values, y, weight=wtr, free_raw_data=True, feature_name=[str(c) for c in Xtr.columns])
         model = lgb.train(base, ds, num_boost_round=rounds)
         fp.last_model = model
         fp.last_features = list(Xtr.columns)

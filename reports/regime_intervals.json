@@ -1,0 +1,82 @@
+{
+ "s1": {
+  "static": {
+   "all": 0.7999,
+   "calm": 0.7862,
+   "normal": 0.7919,
+   "stormy": 0.8213,
+   "vol_shock": 0.8363
+  },
+  "aci": {
+   "all": 0.8001,
+   "calm": 0.7769,
+   "normal": 0.7976,
+   "stormy": 0.8251,
+   "vol_shock": 0.8427
+  },
+  "avg_width_bp": {
+   "static": 10.36,
+   "aci": 10.5
+  }
+ },
+ "f1": {
+  "static": {
+   "all": 0.8001,
+   "calm": 0.7723,
+   "normal": 0.7967,
+   "stormy": 0.8305,
+   "vol_shock": 0.8449
+  },
+  "aci": {
+   "all": 0.8,
+   "calm": 0.771,
+   "normal": 0.7995,
+   "stormy": 0.8288,
+   "vol_shock": 0.8532
+  },
+  "avg_width_bp": {
+   "static": 10.87,
+   "aci": 10.93
+  }
+ },
+ "s5": {
+  "static": {
+   "all": 0.8002,
+   "calm": 0.7594,
+   "normal": 0.8014,
+   "stormy": 0.8388,
+   "vol_shock": 0.8566
+  },
+  "aci": {
+   "all": 0.8,
+   "calm": 0.7567,
+   "normal": 0.8032,
+   "stormy": 0.8389,
+   "vol_shock": 0.8713
+  },
+  "avg_width_bp": {
+   "static": 24.41,
+   "aci": 24.73
+  }
+ },
+ "f5": {
+  "static": {
+   "all": 0.8003,
+   "calm": 0.7557,
+   "normal": 0.8029,
+   "stormy": 0.8411,
+   "vol_shock": 0.859
+  },
+  "aci": {
+   "all": 0.8,
+   "calm": 0.7552,
+   "normal": 0.8038,
+   "stormy": 0.8398,
+   "vol_shock": 0.874
+  },
+  "avg_width_bp": {
+   "static": 24.68,
+   "aci": 24.97
+  }
+ }
+}

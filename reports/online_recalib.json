@@ -1,0 +1,106 @@
+{
+ "s1": {
+  "static_139d": {
+   "skill_all": 2.137,
+   "skill_storm": 0.743,
+   "top10_storm_pred": 0.661,
+   "top10_storm_realized": 0.5998
+  },
+  "roll_14d": {
+   "skill_all": 2.131,
+   "skill_storm": 0.734,
+   "top10_storm_pred": 0.6594,
+   "top10_storm_realized": 0.5998
+  },
+  "roll_7d": {
+   "skill_all": 2.131,
+   "skill_storm": 0.737,
+   "top10_storm_pred": 0.6556,
+   "top10_storm_realized": 0.5998
+  },
+  "roll_3d": {
+   "skill_all": 2.108,
+   "skill_storm": 0.74,
+   "top10_storm_pred": 0.6535,
+   "top10_storm_realized": 0.5998
+  }
+ },
+ "f1": {
+  "static_139d": {
+   "skill_all": 0.855,
+   "skill_storm": 0.428,
+   "top10_storm_pred": 0.6149,
+   "top10_storm_realized": 0.5906
+  },
+  "roll_14d": {
+   "skill_all": 0.847,
+   "skill_storm": 0.42,
+   "top10_storm_pred": 0.612,
+   "top10_storm_realized": 0.5906
+  },
+  "roll_7d": {
+   "skill_all": 0.848,
+   "skill_storm": 0.422,
+   "top10_storm_pred": 0.6099,
+   "top10_storm_realized": 0.5906
+  },
+  "roll_3d": {
+   "skill_all": 0.833,
+   "skill_storm": 0.425,
+   "top10_storm_pred": 0.6091,
+   "top10_storm_realized": 0.5906
+  }
+ },
+ "s5": {
+  "static_139d": {
+   "skill_all": 0.499,
+   "skill_storm": 0.33,
+   "top10_storm_pred": 0.5804,
+   "top10_storm_realized": 0.6019
+  },
+  "roll_14d": {
+   "skill_all": 0.486,
+   "skill_storm": 0.3,
+   "top10_storm_pred": 0.5813,
+   "top10_storm_realized": 0.6019
+  },
+  "roll_7d": {
+   "skill_all": 0.478,
+   "skill_storm": 0.301,
+   "top10_storm_pred": 0.5825,
+   "top10_storm_realized": 0.6019
+  },
+  "roll_3d": {
+   "skill_all": 0.424,
+   "skill_storm": 0.27,
+   "top10_storm_pred": 0.584,
+   "top10_storm_realized": 0.6019
+  }
+ },
+ "f5": {
+  "static_139d": {
+   "skill_all": 0.276,
+   "skill_storm": 0.268,
+   "top10_storm_pred": 0.569,
+   "top10_storm_realized": 0.589
+  },
+  "roll_14d": {
+   "skill_all": 0.259,
+   "skill_storm": 0.23,
+   "top10_storm_pred": 0.5682,
+   "top10_storm_realized": 0.589
+  },
+  "roll_7d": {
+   "skill_all": 0.25,
+   "skill_storm": 0.228,
+   "top10_storm_pred": 0.5687,
+   "top10_storm_realized": 0.589
+  },
+  "roll_3d": {
+   "skill_all": 0.203,
+   "skill_storm": 0.209,
+   "top10_storm_pred": 0.5712,
+   "top10_storm_realized": 0.589
+  }
+ }
+}

@@ -59,7 +59,6 @@ show = [k for k in ("s1", "f1", "s5") if k in lat]
 fig, ax = plt.subplots(figsize=(6.4, 3.6))
 for i, k in enumerate(show):
     ax.plot(delays, lat[k], marker="o", ms=5, color=SERIES[i], label=LABEL[k])
-    ax.annotate(LABEL[k], (delays[-1], lat[k][-1]), xytext=(6, 0), textcoords="offset points", va="center", color=INK2, fontsize=9)
 ax.set_xscale("symlog", linthresh=1)
 ax.set_xticks(delays, [str(x) for x in delays])
 ax.set_xlabel("execution delay after bar close (seconds)")
@@ -67,7 +66,7 @@ ax.set_ylabel("information coefficient")
 ax.set_title("The 1-minute edge decays within seconds")
 ax.set_ylim(bottom=0)
 ax.legend(frameon=False, loc="upper right")
-ax.set_xlim(-0.2, 60)
+ax.set_xlim(-0.2, 40)
 fig.tight_layout()
 fig.savefig(REPORTS / f"latency_decay_{a.tag}.png", dpi=150)
 summary["latency_ic"] = {k: dict(zip(map(str, delays), np.round(v, 4))) for k, v in lat.items()}
@@ -106,7 +105,7 @@ summary["monthly_ic"] = {k: v.to_dict() for k, v in mon.items()}
 regimes = {}
 for k in [k for k in ("s1", "f1", "s5", "f5") if k in P]:
     p = P[k]; v, h = k[0], int(k[1:])
-    d = pd.DataFrame({"p": p.values, "y": df.loc[p.index, f"y_{v}{h}"].values, "sig": df.loc[p.index, "sigma"].values}, index=p.index)
+    d = pd.DataFrame({"p": p.values, "y": df.loc[p.index, f"y_{v}{h}"].values, "sig": df.loc[p.index, "sigma"].values}, index=p.index).dropna()
     hr = (d.index + pd.Timedelta(minutes=1)).hour
     sess = np.select([hr < 8, hr < 13, hr < 21], ["Asia 00-08", "Europe 08-13", "US 13-21"], "Late US 21-24")
     wk = np.where(d.index.dayofweek >= 5, "weekend", "weekday")

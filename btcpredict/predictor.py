@@ -52,12 +52,31 @@ class Predictor:
     def raw(self, X: pd.DataFrame) -> dict:
         out = {}
         for key, parts in self.boosters.items():
-            out[key] = {p: b.predict(X.reindex(columns=b.feature_name()).values.astype(np.float64)) for p, b in parts.items()}
+            out[key] = {}
+            for p, b in parts.items():
+                names = self.meta["targets"][key].get("features", {}).get(p) or b.feature_name()
+                if b.num_feature() != len(names):
+                    raise RuntimeError(f"{key}/{p}: model expects {b.num_feature()} features, meta lists {len(names)}")
+                missing = [c for c in names if c not in X.columns]
+                if missing:
+                    raise RuntimeError(f"{key}/{p}: {len(missing)} features missing from live inputs, e.g. {missing[:5]}")
+                out[key][p] = b.predict(X[names].values.astype(np.float64))
         return out
 
-    def predict(self, X: pd.DataFrame, sigma: np.ndarray) -> pd.DataFrame:
-        """X: feature rows; sigma: per-minute volatility (log-return units) for each row."""
+    def regime(self, vrel: float) -> tuple[int, str]:
+        """Volatility regime from vrel = log(sigma / 1-day median sigma)."""
+        r = self.meta.get("regime")
+        if r is None or not np.isfinite(vrel):
+            return 1, "normal"
+        g = int(np.digitize(vrel, r["regime_edges"]))
+        return g, r["regime_names"][g]
+
+    def predict(self, X: pd.DataFrame, sigma: np.ndarray, vrel: np.ndarray | None = None) -> pd.DataFrame:
+        """X: feature rows; sigma: per-minute volatility (log-return units); vrel: log(sigma / 1-day
+        median sigma) -> regime-conditional bands and hit rates (falls back to static if absent)."""
         raw = self.raw(X)
+        vrel = np.full(len(X), np.nan) if vrel is None else np.asarray(vrel, float)
+        reg = self.meta.get("regime")
         rows = []
         for key, m in self.meta["targets"].items():
             zc, zs = raw[key]["core"], raw[key]["sat"]
@@ -67,16 +86,25 @@ class Predictor:
             a, bb = m["calib"]
             p_up = 1 / (1 + np.exp(-(a + bb * z)))
             exp_ret = m["beta"] * z * scale
-            q = m["resid_q"]
             conf = [float(np.mean(abs(zi) >= np.asarray(m["absz_quantiles"])) * 100) for zi in z]
-            dec = m.get("hit_by_conf_decile") or [np.nan] * 10
             for i in range(len(X)):
+                g, gname = self.regime(vrel[i])
+                if reg is not None and "band_table" in m and np.isfinite(vrel[i]):
+                    q5 = m["band_table"][int(np.digitize(vrel[i], reg["band_edges"]))]
+                    q = dict(zip(("0.025", "0.1", "0.5", "0.9", "0.975"), q5))
+                else:
+                    q = m["resid_q"]
+                if "hit_table" in m:
+                    d = int(np.digitize(abs(z[i]), m["absz_deciles"]))
+                    hh = m["hit_table"][d][g]
+                else:
+                    dec = m.get("hit_by_conf_decile") or [np.nan] * 10
+                    hh = dec[min(int(conf[i] // 10), len(dec) - 1)]
                 rows.append({"target": key, "venue": m["venue"], "h": h, "z": z[i], "z_core": zc[i], "z_sat": zs[i],
                              "p_up": p_up[i], "exp_ret_bp": 1e4 * exp_ret[i],
                              "lo80_bp": 1e4 * (exp_ret[i] + q["0.1"] * scale[i]), "hi80_bp": 1e4 * (exp_ret[i] + q["0.9"] * scale[i]),
                              "lo95_bp": 1e4 * (exp_ret[i] + q["0.025"] * scale[i]), "hi95_bp": 1e4 * (exp_ret[i] + q["0.975"] * scale[i]),
-                             "confidence_pct": conf[i],
-                             "hist_hit_at_conf": dec[min(int(conf[i] // 10), len(dec) - 1)]})
+                             "confidence_pct": conf[i], "regime": gname, "hist_hit_at_conf": hh})
         return pd.DataFrame(rows)
 
     def _x(self, key, z_core, z_sat):

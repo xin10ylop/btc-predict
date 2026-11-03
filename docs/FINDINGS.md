@@ -117,6 +117,32 @@ Three things follow from this table:
 These slices fit the mechanism. Predictability is highest when there are fewer participants and
 arbitrage is slower: weekends, Asia hours, and quiet markets.
 
+## 3b. Why the holdout spot +1m result is so high: regime, not leakage
+
+The spot +1m ensemble scored IC 0.102 and a 56.9% hit rate on the holdout. On the DEV months it
+scored 0.079, and on the confirmation months 0.060. A jump like that has to be explained before it
+can be believed.
+
+* **The perp target did not jump** (holdout 0.063 vs DEV 0.062). Whatever changed is specific to
+  spot.
+* **Leak test.** If the Coinbase candles were shifted in time, their bar return would correlate
+  about 0.9 with the *next* Binance minute. The measured correlation is 0.00–0.06 in every month,
+  with no jump in the holdout.
+* **Model-free evidence.** A single raw feature, the perp-spot basis deviation, shows the same
+  regime pattern on its own:
+
+  | period | 1-min vol (bp) | spot trades/min | model-free IC |
+  |---|---|---|---|
+  | May–Sep 2025 (quiet) | 2.4–3.6 | 1.5–2.5k | 0.075–0.096 |
+  | Oct 2025–Feb 2026 (volatile; contains all DEV + confirmation months) | 4.2–7.2 | 2.8–4.6k | 0.014–0.043 |
+  | May–Oct 2026 (holdout, quiet) | 2.9–5.0 | 1.6–3.0k | 0.047–0.082 |
+
+**Conclusion.** Spot's lag behind the perp is most predictable in calm, thin markets. There, the
+seconds-scale catch-up is a large share of the minute's variance and arbitrage is slower. By bad
+luck, every design-phase month fell in the volatile stretch, the worst regime for this signal. So
+the holdout number is genuine but regime-dependent. Expect a spot +1m hit rate of ~54% in volatile
+months and ~57% in quiet ones, minus the latency decay.
+
 ## 4. Overfitting safeguards actually used
 
 1. A 6-month **holdout** (2026-05 → 2026-10) that no design decision looked at.

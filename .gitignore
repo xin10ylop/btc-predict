@@ -8,3 +8,4 @@ __pycache__/
 models/*.txt
 !models/*.txt.gz
 logs/
+reports/preds/

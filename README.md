@@ -84,7 +84,7 @@ everything rejected: [`docs/FINDINGS.md`](docs/FINDINGS.md).
 pip install -r requirements.txt
 ```
 
-1. Data. This takes about 45 minutes and ~25 GB, all from public endpoints with no API keys.
+1. Data. This takes about 45 minutes and ~20 GB of disk, all from public endpoints with no API keys.
 
 ```bash
 python -m btcpredict.download --start 2025-05-01 --end 2026-11-02 --workers 8

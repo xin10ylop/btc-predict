@@ -32,23 +32,26 @@ def forecast(pred: Predictor, src, T: pd.Timestamp):
     dfh, A = live.build_features(src, T, use_futures=pred.uses_futures, last_n=1)
     X = live.model_inputs(dfh, A)
     sigma = dfh["sigma"].values[-1:]
-    out = pred.predict(X, sigma)
+    sg = dfh["sigma"].astype(float)
+    vrel = np.log(sg / sg.rolling(1440, min_periods=240).median()).values[-1:]
+    out = pred.predict(X, sigma, vrel)
     info = {"T": str(T), "spot": float(np.exp(dfh["s_close"].values[-1])),
             "perp": float(np.exp(dfh["f_close"].values[-1])) if pred.uses_futures else None,
-            "sigma_bp": float(sigma[0] * 1e4)}
+            "sigma_bp": float(sigma[0] * 1e4), "vrel": float(vrel[0]), "regime": pred.regime(float(vrel[0]))[1]}
     return out, info, dfh
 
 
 def render(out: pd.DataFrame, info: dict) -> str:
     lines = [f"\n=== {info['T']} UTC   BTC spot {info['spot']:,.2f}" +
-             (f"   perp {info['perp']:,.2f}" if info['perp'] else "") + f"   1m vol {info['sigma_bp']:.1f}bp ==="]
-    lines.append(f"{'target':8s} {'P(up)':>6s} {'E[r] bp':>8s} {'80% band (bp)':>18s} {'price 80% band':>26s} {'conf%':>6s} {'hist hit':>8s}")
+             (f"   perp {info['perp']:,.2f}" if info['perp'] else "") +
+             f"   1m vol {info['sigma_bp']:.1f}bp   regime {info['regime']} (vol {np.exp(info['vrel']):.2f}x 1-day median) ==="]
+    lines.append(f"{'target':8s} {'P(up)':>6s} {'E[r] bp':>8s} {'80% band (bp)':>18s} {'price 80% band':>26s} {'conf%':>6s} {'hit@conf,regime':>15s}")
     for _, r in out.sort_values(["venue", "h"]).iterrows():
         base = info["spot"] if r["venue"] == "s" else info["perp"]
         lo, hi = base * np.exp(r["lo80_bp"] / 1e4), base * np.exp(r["hi80_bp"] / 1e4)
         name = ("spot" if r["venue"] == "s" else "perp") + f"+{r['h']}m"
         lines.append(f"{name:8s} {r['p_up']:6.3f} {r['exp_ret_bp']:+8.2f} [{r['lo80_bp']:+7.1f},{r['hi80_bp']:+7.1f}] "
-                     f"[{lo:11,.1f},{hi:11,.1f}] {r['confidence_pct']:6.0f} {r['hist_hit_at_conf']:8.3f}")
+                     f"[{lo:11,.1f},{hi:11,.1f}] {r['confidence_pct']:6.0f} {r['hist_hit_at_conf']:15.3f}")
     return "\n".join(lines)
 
 
@@ -70,6 +73,21 @@ def learn(pred: Predictor, pending: list, dfh: pd.DataFrame, T: pd.Timestamp) ->
     return keep
 
 
+def clock_offset_s() -> float:
+    """Exchange time minus local time (median of 5 probes, half round-trip corrected)."""
+    import requests
+    offs = []
+    for _ in range(5):
+        try:
+            t0 = time.time()
+            st = requests.get(live.SPOT_API[0] + "/time", timeout=5).json()["serverTime"] / 1000
+            t1 = time.time()
+            offs.append(st - (t0 + t1) / 2)
+        except Exception:  # noqa: BLE001
+            pass
+    return float(np.median(offs)) if offs else 0.0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", default="full", choices=["full", "spot"])
@@ -87,8 +105,14 @@ def main():
 
     src = live.CachedSource(live.RestSource(use_futures=pred.uses_futures))
     pending: list = []
+    off = clock_offset_s()
+    print(f"clock offset vs exchange: {off:+.3f}s", flush=True)
+
+    def now_ex():
+        return pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(seconds=off)
+
     while True:
-        now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+        now = now_ex()
         T = now.floor("min")
         wake = T + pd.Timedelta(seconds=a.delay)
         if now < wake:
@@ -114,7 +138,9 @@ def main():
         if a.once:
             break
         nxt = T + pd.Timedelta(minutes=1, seconds=a.delay)
-        time.sleep(max(0.0, (nxt - pd.Timestamp.now(tz="UTC").tz_localize(None)).total_seconds()))
+        time.sleep(max(0.0, (nxt - now_ex()).total_seconds()))
+        if T.minute % 30 == 0:
+            off = clock_offset_s()
 
 
 if __name__ == "__main__":
