@@ -18,7 +18,7 @@ from btcpredict.config import FEAT, MODELS, REPORTS  # noqa: E402
 BAND_EDGES = [-0.6, -0.35, -0.15, 0.0, 0.15, 0.35, 0.6, 0.9]
 meta_path = MODELS / "meta.json"
 meta = json.loads(meta_path.read_text())
-panel = pd.read_parquet(FEAT / "panel.parquet", columns=["ts", "sigma"] + [f"y_{v}{h}" for v in "sf" for h in range(1, 6)])
+panel = pd.read_parquet(FEAT / "panel.parquet", columns=["ts", "sigma", "vr_1s_vs_1m"] + [f"y_{v}{h}" for v in "sf" for h in range(1, 6)])
 panel = panel[panel["ts"] >= "2025-05-03"].reset_index(drop=True)
 if (FEAT / "Ysub.parquet").exists():
     panel = pd.concat([panel, pd.read_parquet(FEAT / "Ysub.parquet")], axis=1)
@@ -62,6 +62,22 @@ for variant, vm in meta.items():
                 a_, b_ = (k, b_) if np.mean((r >= k * lo) & (r <= k * hi)) < 0.8 else (a_, k)
             fac.append(round(float(k), 4))
         m["et_hour_band_factor"] = fac
+        # microstructure regime: variance ratio of 1-minute vs summed 1-second variance (trending vs
+        # mean-reverting seconds) -> band width factor per tercile (validated out of sample)
+        vr = panel.loc[pr.index, "vr_1s_vs_1m"].values
+        vr_edges = [float(x) for x in np.nanquantile(vr, [1 / 3, 2 / 3])]
+        g = np.digitize(vr, vr_edges)
+        fet = np.array(fac)[et]
+        vfac = []
+        for j in range(3):
+            mm = ok & (g == j)
+            r, lo, hi = zres[mm], fet[mm] * lo0[mm], fet[mm] * hi0[mm]
+            a_, b_ = 0.5, 2.5
+            for _ in range(30):
+                k = (a_ + b_) / 2
+                a_, b_ = (k, b_) if np.mean((r >= k * lo) & (r <= k * hi)) < 0.8 else (a_, k)
+            vfac.append(round(float(k), 4))
+        m["vr_edges"], m["vr_band_factor"] = vr_edges, vfac
         reg = np.digitize(vrel, REG_EDGES)
         nz = np.isfinite(y) & (y != 0)
         qs = np.quantile(np.abs(z[nz]), np.linspace(0.1, 0.9, 9))

@@ -95,10 +95,13 @@ class Predictor:
                     q = dict(zip(("0.025", "0.1", "0.5", "0.9", "0.975"), q5))
                 else:
                     q = dict(m["resid_q"])
+                k = 1.0
                 if T is not None and "et_hour_band_factor" in m:
                     et_h = pd.Timestamp(T).tz_localize("UTC").tz_convert("America/New_York").hour
-                    k = m["et_hour_band_factor"][et_h]
-                    q = {kk: (vv if kk == "0.5" else vv * k) for kk, vv in q.items()}
+                    k *= m["et_hour_band_factor"][et_h]
+                if "vr_band_factor" in m and "vr_1s_vs_1m" in X.columns and np.isfinite(X["vr_1s_vs_1m"].iloc[i]):
+                    k *= m["vr_band_factor"][int(np.digitize(X["vr_1s_vs_1m"].iloc[i], m["vr_edges"]))]
+                q = {kk: (vv if kk == "0.5" else vv * k) for kk, vv in q.items()}
                 if "hit_table" in m:
                     d = int(np.digitize(abs(z[i]), m["absz_deciles"]))
                     hh = m["hit_table"][d][g]

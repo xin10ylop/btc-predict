@@ -137,6 +137,15 @@ in the hour of the US equity open (9:30 ET) and slightly larger around the 8:30 
 releases. Fitted on May–Jul and tested on Aug–Oct, this lifted coverage in the open hour from
 75–78% to 78–81%, with overall coverage unchanged at ~80%.
 
+Bands are also conditioned on the **microstructure regime**: the ratio of 1-minute variance to
+summed 1-second variance. When second-scale order flow is persistent (trending), multi-second
+moves exceed what 1-second volatility implies. Tested out of sample, this raised coverage in the
+trending tercile from 77–80% to 79–82%.
+
+The live forward test (below) ran on an unusually trending afternoon. Even so, its bands
+under-covered (60–72%), so treat the 80% bands as approximate when the market is moving in one
+direction.
+
 The P(up) map was also tested for regime dependence:
 * adaptive windows of 3, 7 and 14 days;
 * volatility-interaction terms;
