@@ -259,5 +259,43 @@ def main():
     print("finished", stats, f"{time.time()-t0:.0f}s")
 
 
+
+# --------------------------------------------------------------------------------------------
+# OKX BTC-USDT perpetual (third price-discovery venue). Daily files are cut on UTC+8 days and
+# sizes are in contracts (0.01 BTC). Each file -> 86400 per-second bars starting at D-1 16:00 UTC
+# (data/sec/okxraw/D), then re-cut into UTC days (data/sec/okx/D).
+OKX_URL = "https://www.okx.com/cdn/okex/traderecords/trades/daily/{ymd}/BTC-USDT-SWAP-trades-{day}.zip"
+
+
+def okx_file(day: dt.date) -> pd.DataFrame | None:
+    c = _get(OKX_URL.format(ymd=day.strftime("%Y%m%d"), day=day))
+    if c is None:
+        return None
+    z = zipfile.ZipFile(io.BytesIO(c))
+    df = pd.read_csv(io.BytesIO(z.read(z.namelist()[0])), usecols=["side", "price", "size", "created_time"], engine="pyarrow")
+    t0 = _day_start_ms(day) - 8 * 3600 * 1000
+    return trades_to_1s(df["created_time"].to_numpy(np.int64) - t0, df["price"].to_numpy(float),
+                        df["size"].to_numpy(float) * 0.01, (df["side"] == "sell").to_numpy(), n=DAY_SECONDS)
+
+
+def okx_assemble(day: dt.date) -> str:
+    out = SEC / "okx" / f"{day}.parquet"
+    if out.exists():
+        return "cached"
+    a = SEC / "okxraw" / f"{day}.parquet"
+    b = SEC / "okxraw" / f"{day + dt.timedelta(days=1)}.parquet"
+    if not a.exists() or not b.exists():
+        return "missing"
+    A, B = pd.read_parquet(a), pd.read_parquet(b)
+    # raw file D covers [D-1 16:00, D 16:00) UTC -> UTC day D = A[8h:] + B[:8h]
+    d = pd.concat([A.iloc[8 * 3600:], B.iloc[:8 * 3600]], ignore_index=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    d.to_parquet(out, index=False)
+    return "ok"
+
+
+JOBS["okxraw"] = okx_file
+
+
 if __name__ == "__main__":
     main()

@@ -63,6 +63,16 @@ holdout results are in the README.
   literature: at this signal-to-noise ratio, trees win.
 * **Structural decomposition** (spot = perp forecast − forecast basis change): IC 0.073 vs 0.075
   for the direct model, so no gain.
+* **OKX BTC-USDT perpetual as a third price-discovery venue** (18 months of trades; OKX files
+  are cut on UTC+8 days, verified against Binance with a lag-0 1-s return correlation of 0.86).
+  * Univariate signals are tiny but stable: the price deviation vs Binance has IC ≈ 0.004 and is
+    positive in 19/19 months; taker-flow imbalance has IC ≈ 0.017.
+  * Incremental value on top of the satellite is only **+0.001 IC**. That is significant only
+    for spot +1m (p = 0.014), not for the perp (p = 0.10) or at 5 minutes.
+  * The two perps are tightly arbitraged at the 1-second level: their cross-correlations are
+    symmetric, with no leader.
+  * Rejected: it doesn't pay for another live dependency (about 2 s of extra fetch latency
+    without websockets) and a full re-validation.
 * **Literature signals added on top of microstructure:**
   * Sign-based reversal kernels, quarter-hour clock interactions: ΔIC +0.0008 (noise).
   * Lévy-area / path-signature lead-lag features: univariate IC ≈ 0, no gain.

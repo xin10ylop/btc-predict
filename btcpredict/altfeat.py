@@ -159,3 +159,54 @@ def build2(start: str, end: str, workers: int = 3) -> pd.DataFrame:
     num = df.columns.drop("ts")
     df[num] = df[num].astype("float32").replace([np.inf, -np.inf], np.nan)
     return df
+
+
+# ---------------------------------------------------------------------------------------------
+# v5: OKX BTC-USDT perpetual as a third price-discovery venue
+def okx_from_arrays(Fb: dict, O: dict | None, end: np.ndarray, ts: np.ndarray) -> pd.DataFrame:
+    f = {"ts": ts}
+    if O is None or not np.isfinite(O["lp"]).any():
+        return pd.DataFrame(f)
+    lpb, lpo = Fb["lp"], O["lp"]
+    rb = np.diff(lpb, prepend=lpb[0])
+    sig = np.sqrt(pd.Series(rb ** 2).rolling(PRE, min_periods=60).mean().to_numpy() + 1e-14)
+    dev = lpo - lpb
+    cs = np.concatenate([[0.0], np.cumsum(dev)])
+    f["okx_dev"] = (dev[end] - (cs[end + 1] - cs[end + 1 - 600]) / 600) / (sig[end] * np.sqrt(60))
+    for w in (10, 60, 300):
+        f[f"okx_dev{w}"] = (dev[end] - (cs[end + 1] - cs[end + 1 - w]) / w) / (sig[end] * np.sqrt(60))
+    for w in (1, 3, 10, 30):
+        f[f"okx_z{w}"] = (lpo[end] - lpo[end - w]) / (sig[end] * np.sqrt(w))
+        f[f"okx_minus_binp{w}"] = ((lpo[end] - lpo[end - w]) - (lpb[end] - lpb[end - w])) / (sig[end] * np.sqrt(w))
+    flow = np.concatenate([[0.0], np.cumsum(2 * O["bv"] - O["v"])])
+    vol = np.concatenate([[0.0], np.cumsum(O["v"])])
+    for w in (3, 10, 30):
+        f[f"okx_imb{w}"] = (flow[end + 1] - flow[end + 1 - w]) / (vol[end + 1] - vol[end + 1 - w] + 1e-12)
+    fb_flow = np.concatenate([[0.0], np.cumsum(2 * Fb["bv"] - Fb["v"])]) if "bv" in Fb else None
+    if fb_flow is not None:
+        fbv = np.concatenate([[0.0], np.cumsum(Fb["v"])])
+        f["okx_share60"] = (vol[end + 1] - vol[end + 1 - 60]) / (fbv[end + 1] - fbv[end + 1 - 60] + vol[end + 1] - vol[end + 1 - 60] + 1e-12)
+    return pd.DataFrame(f)
+
+
+def day_okx(day: dt.date) -> pd.DataFrame | None:
+    Fb = _extended("um", day, ["c", "v", "bv"])
+    if Fb is None:
+        return None
+    O = _extended("okx", day, ["c", "v", "bv"])
+    m = np.arange(NMIN)
+    end = PRE + 60 * m + 59
+    return okx_from_arrays(Fb, O, end, (pd.Timestamp(day) + pd.to_timedelta(60 * m, unit="s")).values)
+
+
+def build_okx(start: str, end: str, workers: int = 3) -> pd.DataFrame:
+    from multiprocessing import Pool
+
+    s, e = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
+    days = [s + dt.timedelta(days=i) for i in range((e - s).days + 1)]
+    with Pool(workers) as pool:
+        parts = [p for p in pool.imap(day_okx, days, chunksize=4) if p is not None]
+    df = pd.concat(parts, ignore_index=True)
+    num = df.columns.drop("ts")
+    df[num] = df[num].astype("float32").replace([np.inf, -np.inf], np.nan)
+    return df
