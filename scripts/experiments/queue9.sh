@@ -1,6 +1,6 @@
 #!/bin/bash
 # after queue8 (PID $1): satellite = nofd + Coinbase + wide swarm + ETH perp
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 while kill -0 "$1" 2>/dev/null; do sleep 15; done
 M=2025-11,2026-01,2026-03
 run() { python3 scripts/run_model.py --model lgbm --months $M --alts --more Xcb.parquet,Xalt2.parquet "$@" 2>&1 | grep -vE "^\s+fold"; }

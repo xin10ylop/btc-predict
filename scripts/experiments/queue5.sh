@@ -1,6 +1,6 @@
 #!/bin/bash
 # runs after the master queue (waits on its PID passed as $1)
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 while kill -0 "$1" 2>/dev/null; do sleep 15; done
 M=2025-11,2026-01,2026-03
 run() { python3 scripts/run_model.py --model lgbm --months $M --alts --features @reports/feats_noaux.txt "$@" 2>&1 | grep -vE "^\s+fold"; }

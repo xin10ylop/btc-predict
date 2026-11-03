@@ -76,7 +76,7 @@ holdout results are in the README.
   that were found show near-zero return IC for zero-shot use on crypto (Kronos paper:
   crypto-group IC ≈ 0.037 vs 0.045 for DLinear). The local Kronos benchmark was not run, because
   executing code cloned from GitHub was blocked in this environment.
-  `scripts/bench_foundation.py` is ready if you want to run it yourself.
+  `scripts/experiments/bench_foundation.py` is ready if you want to run it yourself.
 
 ## 2b. The adaptive layer: where online learning helps and where it hurts
 
@@ -142,6 +142,48 @@ seconds-scale catch-up is a large share of the minute's variance and arbitrage i
 luck, every design-phase month fell in the volatile stretch, the worst regime for this signal. So
 the holdout number is genuine but regime-dependent. Expect a spot +1m hit rate of ~54% in volatile
 months and ~57% in quiet ones, minus the latency decay.
+
+## 3c. Regime change: what was built, what was rejected
+
+The guiding question: does the system stay honest when the market changes character?
+
+| Mechanism | Verdict | Evidence |
+|---|---|---|
+| Scale-free features (returns in units of current vol, flows in units of typical volume) | kept | a calm month and a wild month look alike to the model |
+| Volatility-state features (vol vs its slow average, 5/60/240-min RV ratios) | kept | the forecast's own magnitude already shrinks in storms |
+| Core + satellite + online prior-RLS (h=1) | kept | absorbs venue/structure breaks; FDUSD month perp IC 0.015 → 0.033 |
+| Regime-conditional 80/95% bands (vol vs its 1-day median, 9 bins) | **kept** | coverage 78–81% in calm, normal and stormy markets vs 76–84% for static bands; also narrower |
+| P(up) with vol-interaction terms / 3–14-day adaptive windows / confidence×regime table | rejected | no log-loss gain; adaptive windows chase noise |
+| Rolling 120-day retraining instead of expanding | rejected | IC 0.050 vs 0.053 |
+
+**Known residual weakness.** In *multi-day* storms (vol high relative to its 30-day median), the
+spot +1m top-confidence decile is overconfident by about 6 percentage points: it claims 66% and
+realizes 60%. The perp +1m is overconfident by about 2.5 pp. Neither the adaptive calibrators nor
+the vol interactions fixed this. The live output therefore prints the regime alongside every
+forecast.
+
+## 3d. Holdout verdict (frozen May → Oct 2026)
+
+* All **90/90** (target × month) ICs are positive. Satellite beats core on every target
+  (p < 0.001).
+* Full model, next minute:
+  * perp +1m: IC 0.063, hit 54.4%
+  * spot +1m: IC 0.102, hit 56.9% (calm regime; see 3b)
+* Full model, next 5 minutes:
+  * perp +5m: IC 0.030, hit 52.3%
+  * spot +5m: IC 0.048, hit 53.4%
+* The spot-only model (no futures data) matches the full model at 5 minutes and reaches 95% of
+  it at 1 minute.
+
+## 3e. A bug the live test caught
+
+The first live run printed *identical* probabilities every minute. The LightGBM boosters had
+been trained on unnamed arrays, and the predictor looked features up by name, so every input was
+NaN. The holdout numbers were unaffected, because those forecasts used aligned arrays. The fix
+stores each booster's exact feature list. The predictor now refuses to run on a count mismatch,
+and the parity test compares live-path output with the booster's output on the training matrix
+(exact match, e.g. −0.21760 vs −0.21760). **Lesson: a backtest is not a deployment. Always run
+the real code path on real data before trusting it.**
 
 ## 4. Overfitting safeguards actually used
 

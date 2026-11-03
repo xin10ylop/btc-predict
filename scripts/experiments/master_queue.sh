@@ -1,6 +1,6 @@
 #!/bin/bash
 # Sequential experiment queue (no inter-script waiting).
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 M=2025-11,2026-01,2026-03
 run() { python3 scripts/run_model.py --model lgbm --months $M --alts "$@" 2>&1 | grep -vE "^\s+fold"; }
 run --venue f --h 1 --tag v3alt

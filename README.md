@@ -22,7 +22,118 @@ was not used for any design decision.
 >
 > Anyone showing much more than ~56% on *all* 1-minute bars almost certainly has a leak.
 
-RESULTS_SECTION
+## Results: 6-month frozen holdout (May → Oct 2026, ~260k forecasts per target)
+
+Walk-forward evaluation, with the model retrained every two months on all prior data. No design
+decision ever looked at these months.
+
+The **full** model uses Binance spot + perpetual + ETH-perp + 17 alts + Coinbase. The **spot**
+model uses no futures data at all and runs wherever Binance's public spot mirror and Coinbase are
+reachable.
+
+**Column guide**
+* **hit rate**: share of non-flat minutes where the forecast sign was right.
+* **top-k% conf.**: hit rate on the k% of minutes where the model was most confident.
+* **log-loss skill**: P(up) improvement over a constant 50/50 forecast.
+* **hit @ +2s / +5s**: the forecast starts from the price 2 or 5 seconds after the bar close, i.e.
+  what a slower client actually gets. The live CLI delivers forecasts about 2.2 s after the close.
+
+| model | target | hit rate | AUC | IC | top-10% conf. hit | top-1% conf. hit | log-loss skill | hit @ +2s | hit @ +5s | IC core → ens |
+|---|---|---|---|---|---|---|---|---|---|---|
+| full | spot +1m | **56.9%** | 0.597 | 0.102 | 67.4% | 73.9% | 2.14% | 55.3% | 54.1% | 0.094 → 0.102 |
+| full | spot +2m | **55.0%** | 0.570 | 0.073 | 62.6% | 68.6% | 1.10% | 53.9% | 53.0% | 0.068 → 0.073 |
+| full | spot +3m | **54.1%** | 0.557 | 0.060 | 60.6% | 66.3% | 0.74% | 53.2% | 52.6% | 0.056 → 0.060 |
+| full | spot +4m | **53.6%** | 0.552 | 0.053 | 59.3% | 64.7% | 0.60% | 52.9% | 52.4% | 0.049 → 0.053 |
+| full | spot +5m | **53.4%** | 0.547 | 0.048 | 58.8% | 64.4% | 0.50% | 52.7% | 52.3% | 0.043 → 0.048 |
+| full | perp +1m | **54.4%** | 0.561 | 0.063 | 61.0% | 67.6% | 0.86% | 53.0% | 52.4% | 0.052 → 0.063 |
+| full | perp +2m | **53.1%** | 0.544 | 0.042 | 58.0% | 61.2% | 0.43% | 52.2% | 51.8% | 0.034 → 0.042 |
+| full | perp +3m | **52.7%** | 0.538 | 0.035 | 56.9% | 60.8% | 0.33% | 52.1% | 51.8% | 0.028 → 0.035 |
+| full | perp +4m | **52.6%** | 0.536 | 0.031 | 56.6% | 60.1% | 0.30% | 52.0% | 51.8% | 0.025 → 0.031 |
+| full | perp +5m | **52.3%** | 0.534 | 0.030 | 57.3% | 60.7% | 0.28% | 51.9% | 51.7% | 0.024 → 0.030 |
+| spot | spot +1m | **56.5%** | 0.593 | 0.097 | 66.8% | 73.9% | 1.95% | 55.2% | 54.0% | 0.079 → 0.097 |
+| spot | spot +2m | **54.9%** | 0.568 | 0.070 | 62.3% | 67.9% | 1.02% | 53.8% | 53.0% | 0.056 → 0.070 |
+| spot | spot +3m | **54.0%** | 0.556 | 0.059 | 60.2% | 64.6% | 0.70% | 53.1% | 52.6% | 0.047 → 0.059 |
+| spot | spot +4m | **53.6%** | 0.550 | 0.052 | 59.4% | 63.0% | 0.57% | 52.9% | 52.4% | 0.042 → 0.052 |
+| spot | spot +5m | **53.3%** | 0.547 | 0.048 | 58.7% | 63.6% | 0.50% | 52.7% | 52.4% | 0.037 → 0.048 |
+
+**Stability.** All **90 of 90** (target × month) holdout ICs are positive. The full-model
+monthly IC ranges are:
+* spot +1m: 0.079 – 0.126
+* perp +1m: 0.045 – 0.077
+* perp +5m: 0.022 – 0.034
+
+**Regime caveat (important).** The holdout was a *calm* period. Every signal here is 2–3× stronger
+in calm markets (see below and [`docs/FINDINGS.md`](docs/FINDINGS.md) §3b). On the three volatile,
+never-tuned confirmation months (Dec 2025, Feb 2026, Apr 2026), the same architecture scored:
+
+| target | IC | hit rate |
+|---|---|---|
+| perp +1m | 0.050 | 53.6% |
+| spot +1m | 0.060 | 54.2% |
+| perp +5m | 0.028 | 52.5% |
+| spot +5m | 0.032 | 52.8% |
+
+Treat these as the **conservative** numbers and the holdout as the calm-market numbers.
+
+![latency](reports/latency_decay_holdout.png)
+
+![confidence](reports/hit_by_confidence_holdout.png)
+
+### When is Bitcoin predictable? (holdout, full model)
+
+| slice | spot +1m IC / hit | perp +1m IC / hit | perp +5m IC / hit |
+|---|---|---|---|
+| calm (low-vol tercile) | 0.198 / 60.3% | 0.119 / 55.9% | 0.045 / 52.3% |
+| stormy (high-vol tercile) | 0.083 / 54.2% | 0.055 / 53.0% | 0.030 / 52.1% |
+| weekend | 0.129 / 59.4% | 0.080 / 55.7% | 0.050 / 53.2% |
+| weekday | 0.100 / 56.0% | 0.062 / 53.8% | 0.025 / 51.9% |
+| US session 13–21 UTC | 0.086 / 56.0% | 0.056 / 53.9% | 0.028 / 52.4% |
+
+This pattern was predicted from the DEV months *before* the holdout was opened. The mechanism:
+fewer participants and slower cross-venue arbitrage make the seconds-scale lead-lag a larger and
+more persistent part of each minute's move.
+
+### Regime-aware uncertainty
+
+The 80% bands are conditional on the current volatility regime (volatility relative to its own
+1-day median). That matters because volatility mean-reverts: calm stretches tend to be followed
+by larger moves, and storms by smaller ones.
+
+| 80% band coverage (spot +5m, causal evaluation) | calm | normal | stormy | right after a vol shock | width |
+|---|---|---|---|---|---|
+| static bands | 75.9% | 80.1% | 83.9% | 85.7% | 24.4 bp |
+| **regime-conditional (shipped)** | **78.5%** | **79.3%** | **80.6%** | **79.6%** | **23.4 bp** |
+
+The P(up) map was also tested for regime dependence:
+* adaptive windows of 3, 7 and 14 days;
+* volatility-interaction terms;
+* a confidence × regime table.
+
+None beat the static logistic map, because the model's own forecast strength already shrinks in
+volatile markets. The live output shows the current regime and the historical hit rate for calls
+of that confidence in that regime.
+
+### What the edge is worth
+
+Gross edge per trade (bp) if you trade the forecast direction and exit after h minutes:
+
+| target | all minutes | top 10% | top 1% | avg move in top 1% |
+|---|---|---|---|---|
+| spot +1m | 0.49 bp (0.32 @+2s) | 0.90 (0.67) | 1.02 (0.77) | 1.7 bp |
+| perp +1m | 0.30 (0.17) | 0.61 (0.39) | 0.90 (0.64) | 2.2 bp |
+| spot +5m | 0.49 (0.35) | 1.02 (0.83) | 1.15 (1.01) | 3.2 bp |
+| perp +5m | 0.28 (0.19) | 0.79 (0.64) | 1.49 (1.33) | 6.7 bp |
+
+The model is most confident in *quiet* minutes, which have the smallest moves. Edges are about
+1 bp against 4–10 bp of round-trip taker fees, so this is **not a standalone taker strategy**.
+It is useful as:
+* a quote-skewing or inventory signal for market makers;
+* an execution-timing signal;
+* calibrated probabilities for short-horizon up/down markets;
+* an input to slower strategies.
+
+LIVE_SECTION
+
 
 ## How it works
 
@@ -80,9 +191,18 @@ everything rejected: [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
 ## Quick start
 
+The trained models are included (`models/*.txt.gz`), so you can run the live forecaster right away:
+
 ```bash
 pip install -r requirements.txt
 ```
+
+```bash
+python -m btcpredict.run_live --variant spot
+```
+
+Use `--variant full` if Binance USD-M futures are available where you are. To rebuild everything
+from scratch:
 
 1. Data. This takes about 45 minutes and ~20 GB of disk, all from public endpoints with no API keys.
 
@@ -138,13 +258,17 @@ python -m btcpredict.run_live --variant full --replay "2026-10-15 13:37"
 python scripts/score_live_log.py
 ```
 
-Example output:
+Example output (a real forecast from the live forward test, spot-only model):
 
 ```
-=== 2026-11-03 14:02:00 UTC   BTC spot 77,158.01   1m vol 2.7bp ===
-target    P(up)  E[r] bp      80% band (bp)             price 80% band  conf%  hist hit
-spot+1m   0.571    +0.62 [   -3.6,   +4.9] [   77,130.2,   77,195.8]     93    0.629
-...
+=== 2026-11-03 13:57:00 UTC   BTC spot 77,392.00   1m vol 4.8bp   regime stormy (vol 1.43x 1-day median) ===
+target    P(up)  E[r] bp      80% band (bp)             price 80% band  conf% hit@conf,regime
+spot+1m   0.592    +1.28 [   -5.7,   +8.1] [   77,347.8,   77,454.3]     77           0.596
+spot+2m   0.559    +1.26 [   -8.9,  +10.9] [   77,323.0,   77,476.8]     74           0.569
+spot+3m   0.541    +1.16 [  -11.4,  +13.1] [   77,303.5,   77,493.1]     69           0.560
+spot+4m   0.531    +1.04 [  -13.4,  +14.6] [   77,288.4,   77,505.2]     63           0.549
+spot+5m   0.512    +0.54 [  -15.6,  +15.8] [   77,271.5,   77,514.4]     34           0.526
+(computed 2.17s after bar close)
 ```
 
 ## Repository layout

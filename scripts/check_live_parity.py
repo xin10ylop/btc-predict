@@ -55,3 +55,30 @@ agg = pd.DataFrame({"v": s["v"].groupby(g).sum(), "bv": s["bv"].groupby(g).sum()
 print("klines vs aggTrades  max|dv|", float(np.max(np.abs(k["volume"].values - agg["v"].values))),
       " max|dbv|", float(np.max(np.abs(k["taker_buy_volume"].values - agg["bv"].values))),
       " max|dclose|", float(np.nanmax(np.abs(k["close"].values - agg["c"].values))))
+
+# end-to-end: the live forecaster's model scores must equal the boosters applied to the training
+# matrix (guards against feature-name / ordering bugs between training and deployment)
+from btcpredict.config import MODELS  # noqa: E402
+from btcpredict.predictor import Predictor  # noqa: E402
+from btcpredict.run_live import forecast  # noqa: E402
+
+if (MODELS / "meta.json").exists():
+    Xfull = pd.concat([X, pd.read_parquet(FEAT / "Xcb.parquet"), pd.read_parquet(FEAT / "Xalt2.parquet")], axis=1)
+    for variant in ("full", "spot"):
+        p = Predictor(variant, state_file=SEC / "_none.json")
+        za, zb = [], []
+        for i in idx:
+            T = panel["ts"].iloc[i] + pd.Timedelta(minutes=1)
+            out, _, _ = forecast(p, src, T)
+            direct = p.raw(Xfull.iloc[[i]])
+            for key in p.meta["targets"]:
+                za.append(out.loc[out.target == key, "z_sat"].values[0]); zb.append(direct[key]["sat"][0])
+        za, zb = np.array(za), np.array(zb)
+        # live history is 43h instead of 18 months -> 3 slow-EWM vol features differ by ~1e-3, which can
+        # flip a tree split; scores must still agree to within a small fraction of their spread
+        diff = np.abs(za - zb)
+        corr = np.corrcoef(za, zb)[0, 1]
+        print(f"predictor parity variant={variant}: n={len(za)} corr={corr:.5f} max|dz|={diff.max():.4f} "
+              f"median|dz|={np.median(diff):.5f} (score std {zb.std():.3f})")
+        assert np.std(za) > 0, "constant model output -> feature mapping is broken"
+        assert corr > 0.99 and diff.max() < 0.25 * zb.std(), "live scores diverge from training scores"
