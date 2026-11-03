@@ -7,20 +7,23 @@ covers both Binance spot (BTC/USDT) and the USD-M perpetual. Each forecast inclu
 * 80% and 95% bands
 * a confidence percentile, with the historical hit rate at that confidence level
 
-The models were built from 18 months of one-second data (~790k minute bars) across 25 instruments
-and 3 venues. The headline numbers come from a **frozen 6-month holdout (May → Oct 2026)** that
+The models were built from 18 months of one-second data (~790k minute bars) across 23 instruments
+and 3 venues: Binance spot, Binance futures and Coinbase. The headline numbers come from a **frozen 6-month holdout (May → Oct 2026)** that
 was not used for any design decision.
 
 > **Read this first.** At 1–5 minute horizons Bitcoin is close to a random walk.
 > * A real, durable edge here looks like a **53–55% hit rate on all minutes**. It rises to
 >   **60–70% on the most confident 1–10%**.
-> * The 1-minute edge is mostly **seconds-scale lead-lag**. Its value halves if you act ~2
->   seconds late (see *Latency*).
+> * The 1-minute edge is mostly **seconds-scale lead-lag**. It loses about a third of its value
+>   if you act 2 seconds late, and about half at 5 seconds (see the latency chart).
 > * It is smaller than taker fees (~1–10 bp per side). Treat this as a high-quality *signal* —
 >   for market making, execution timing, or short-horizon prediction markets — not as a
 >   standalone money printer.
 >
-> Anyone showing much more than ~56% on *all* 1-minute bars almost certainly has a leak.
+> Be suspicious of anything above ~56% on *all* 1-minute bars. Our own spot +1m holdout figure
+> (56.9%) tripped exactly that alarm. It was accepted only after a leak test and a model-free
+> check traced it to a calm-market regime ([FINDINGS §3b](docs/FINDINGS.md)). In volatile months,
+> expect ~54%.
 
 ## Results: 6-month frozen holdout (May → Oct 2026, ~260k forecasts per target)
 
@@ -135,6 +138,30 @@ It is useful as:
 LIVE_SECTION
 
 
+## Built for regime change
+
+Crypto microstructure changes constantly: venues gain and lose market share, volatility
+regimes flip, and arbitrage capital comes and goes. Each defense below was tested, not assumed:
+
+1. **Scale-free inputs.** Every return is measured in units of current volatility and every flow
+   in units of typical volume, so a calm month and a wild month look alike to the model.
+2. **The model sees the regime.** Volatility-state features let it learn that the same signal is
+   weaker in storms. Its forecasts shrink on their own, which is why a static P(up) map stays
+   calibrated within regimes.
+3. **Core + satellite + online learning.** When BTC/FDUSD lost 97% of its volume in Feb 2026, a
+   satellite-only model fell to IC 0.015. The online layer (h=1) moved weight back to the robust
+   core within days (IC 0.033). It keeps learning from every realized outcome live.
+4. **Regime-conditional uncertainty.** Bands keep ~80% coverage in calm, normal and stormy
+   markets, and right after volatility shocks.
+5. **Rejected:** shorter retraining windows and adaptive P(up) calibration. Both chase noise
+   (FINDINGS §3c).
+6. **Refresh.** `scripts/monthly_refresh.sh` retrains on all data each month. A full re-validation
+   (`train_final.py`, ~2.5 h) every few months re-checks the calibration on fresh out-of-sample
+   data.
+
+Known weak spot: in multi-day storms, the spot +1m top-confidence decile is overconfident by
+~6 percentage points. Every forecast prints the current regime so you can discount it.
+
 ## How it works
 
 ```
@@ -155,8 +182,8 @@ LIVE_SECTION
      h >= 2: satellite (overlapping outcomes make online weights too noisy)
                                     │
                                     ▼
-     calibration: P(up) (logistic), E[r] (shrinkage), bands (residual quantiles),
-                  confidence percentile + historical hit rate per confidence decile
+     calibration: P(up) (logistic), E[r] (shrinkage), regime-conditional bands,
+                  confidence percentile + historical hit rate per (confidence decile x regime)
 ```
 
 ## What actually predicts Bitcoin at 1–5 minutes, and why
@@ -166,7 +193,7 @@ everything rejected: [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
 1. **The perp leads spot.** The perpetual trades ~9× spot's volume, so informed flow hits it
    first, and basis arbitrageurs drag spot along within seconds. The perp–spot basis deviation is
-   the #1 feature for spot. The basis change itself is predictable with IC 0.63.
+   the #1 feature of the core spot model. The basis change itself is predictable with IC 0.63.
 2. **The Coinbase premium.** US institutional and ETF-related demand prints on Coinbase first.
    When Coinbase trades rich vs its own 15-minute norm, Binance follows. It is the top feature for
    both targets, and its IC is positive in **19/19 months** for the perp 5-minute target.
@@ -183,7 +210,9 @@ everything rejected: [`docs/FINDINGS.md`](docs/FINDINGS.md).
 * BTC/FDUSD book features: their predictive power died when FDUSD's market share collapsed in Feb
   2026, which motivated the core/satellite design.
 * A 1-second neural net (TCN).
-* Foundation-model forecasts (from published benchmarks).
+* Time-series foundation models. Published benchmarks show near-zero return IC for crypto; the
+  local Kronos benchmark was not run, because executing cloned code was blocked in this
+  environment.
 * Path-signature (Lévy-area) features.
 * Clock / quarter-hour effects.
 * Slow "regime" features at 5 minutes. They had high importance but zero contribution, which is a
@@ -285,5 +314,8 @@ spot+5m   0.512    +0.54 [  -15.6,  +15.8] [   77,271.5,   77,514.4]     34     
 | `btcpredict/live.py`, `run_live.py`, `predictor.py` | live data sources, caching, forecaster CLI |
 | `scripts/run_model.py` | single walk-forward experiment (cached OOS predictions) |
 | `scripts/train_final.py` | holdout evaluation + production models + calibration |
-| `scripts/check_live_parity.py` | proves live features == training features |
+| `scripts/check_live_parity.py` | proves live features and model scores == training |
+| `scripts/monthly_refresh.sh` | pull new data, rebuild features, retrain production models (~1–1.5 h) |
+| `scripts/experiments/` | the research experiments behind docs/FINDINGS.md (every run's args are in `reports/results.jsonl`) |
+| `tests/` | unit tests for the core math (`python -m pytest -q tests`) |
 | `docs/FINDINGS.md` | the research log: mechanisms, evidence, rejected ideas |

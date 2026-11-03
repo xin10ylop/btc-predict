@@ -42,6 +42,8 @@ ap.add_argument("--half_life", type=float, default=4320)
 ap.add_argument("--kappa", type=float, default=10.0, help="strength of the persistent prior 'trust the satellite'")
 ap.add_argument("--block", type=int, default=2, help="test months per retrain")
 ap.add_argument("--skip_final", action="store_true")
+ap.add_argument("--production_only", action="store_true",
+                help="monthly refresh: retrain core+satellite on ALL data, keep the validated calibration/RLS state")
 ap.add_argument("--extra_x", default="Xcb.parquet,Xalt2.parquet", help="comma list of extra feature parquet files in data/features")
 a = ap.parse_args()
 
@@ -95,6 +97,19 @@ for variant in a.variants.split(","):
             t0 = time.time()
             scale = F.target_scale(df, h)
             yz = df[f"y_{venue}{h}"] / scale
+            if a.production_only:
+                entry = vm["targets"][key]
+                hc = {part: (cols[part] if h == 1 else cols[part + "_fast"]) for part in ("core", "sat")}
+                tr = np.where(np.isfinite(yz.values))[0]
+                for part in ("core", "sat"):
+                    fp = M.lgbm_factory(params=params, rounds=a.rounds)
+                    fp(X[hc[part]].iloc[tr], yz.iloc[tr], X[hc[part]].iloc[-5:], None)
+                    fp.last_model.save_model(str(MODELS / entry["files"][part]))
+                    entry.setdefault("features", {})[part] = hc[part]
+                entry["trained_through"] = str(df["ts"].iloc[tr[-1]])
+                meta_path.write_text(json.dumps(meta, indent=1, default=float))
+                print(f"{variant} {key} retrained through {entry['trained_through']} ({time.time()-t0:.0f}s)", flush=True)
+                continue
             folds = E.make_folds(df["ts"], months, purge_minutes=h + 10, block=a.block)
             preds, fps = {}, {}
             hc = {part: (cols[part] if h == 1 else cols[part + "_fast"]) for part in ("core", "sat")}
@@ -132,6 +147,7 @@ for variant in a.variants.split(","):
                 for part in ("core", "sat"):
                     fps[part](X[hc[part]].iloc[tr], yz.iloc[tr], X[hc[part]].iloc[-5:], None)
                     fps[part].last_model.save_model(str(MODELS / entry["files"][part]))
+            entry["features"] = {part: hc[part] for part in ("core", "sat")}
             vm["targets"][key] = entry
             meta_path.write_text(json.dumps(meta, indent=1, default=float))
             (REPORTS / f"{'holdout' if a.months == 'holdout' else 'confirm'}_{variant}_{key}.json").write_text(json.dumps(res, indent=1, default=float))
