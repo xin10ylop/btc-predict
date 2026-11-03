@@ -96,7 +96,7 @@ def alt2_from_arrays(S: dict, Fb: dict | None, alts: dict, ethum: dict | None, e
     f = {"ts": ts}
     Z = {w: [] for w in (3, 10, 30)}
     for a, A in alts.items():
-        if A is None:
+        if A is None or not np.isfinite(A["lp"]).any():
             continue
         lp = A["lp"]
         r = np.diff(lp, prepend=lp[0])

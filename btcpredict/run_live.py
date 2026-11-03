@@ -5,9 +5,10 @@
   python -m btcpredict.run_live --once              # single forecast and exit
   python -m btcpredict.run_live --replay "2026-10-15 13:37" --variant full   # offline, from history
 
-Every forecast is appended to logs/predictions.jsonl (score it later with scripts/score_live_log.py).
-Forecasts refer to the price change from the forecast instant (bar close) to the close h minutes
-later. The 1-minute spot edge decays within seconds (see README) - act fast or use h>=2.
+Every forecast is appended to logs/predictions.jsonl. As forecasts mature, the realized move
+updates the online RLS layer (state persisted in logs/rls_state_<variant>.json), so the model
+keeps adapting between retrains. Forecasts refer to the change from the bar close (forecast
+instant) to the close h minutes later; the 1-minute edge decays within seconds (see README).
 """
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ warnings.simplefilter("ignore")
 LOG = ROOT / "logs"
 
 
-def forecast(pred: Predictor, src, T: pd.Timestamp) -> tuple[pd.DataFrame, dict]:
+def forecast(pred: Predictor, src, T: pd.Timestamp):
     dfh, A = live.build_features(src, T, use_futures=pred.uses_futures, last_n=1)
     X = live.model_inputs(dfh, A)
     sigma = dfh["sigma"].values[-1:]
@@ -35,7 +36,7 @@ def forecast(pred: Predictor, src, T: pd.Timestamp) -> tuple[pd.DataFrame, dict]
     info = {"T": str(T), "spot": float(np.exp(dfh["s_close"].values[-1])),
             "perp": float(np.exp(dfh["f_close"].values[-1])) if pred.uses_futures else None,
             "sigma_bp": float(sigma[0] * 1e4)}
-    return out, info
+    return out, info, dfh
 
 
 def render(out: pd.DataFrame, info: dict) -> str:
@@ -46,10 +47,27 @@ def render(out: pd.DataFrame, info: dict) -> str:
         base = info["spot"] if r["venue"] == "s" else info["perp"]
         lo, hi = base * np.exp(r["lo80_bp"] / 1e4), base * np.exp(r["hi80_bp"] / 1e4)
         name = ("spot" if r["venue"] == "s" else "perp") + f"+{r['h']}m"
-        hh = r["hist_hit_at_conf"]
         lines.append(f"{name:8s} {r['p_up']:6.3f} {r['exp_ret_bp']:+8.2f} [{r['lo80_bp']:+7.1f},{r['hi80_bp']:+7.1f}] "
-                     f"[{lo:11,.1f},{hi:11,.1f}] {r['confidence_pct']:6.0f} {hh if hh is not None else float('nan'):8.3f}")
+                     f"[{lo:11,.1f},{hi:11,.1f}] {r['confidence_pct']:6.0f} {r['hist_hit_at_conf']:8.3f}")
     return "\n".join(lines)
+
+
+def learn(pred: Predictor, pending: list, dfh: pd.DataFrame, T: pd.Timestamp) -> list:
+    """Update the online layer with every forecast whose horizon has elapsed by instant T."""
+    closes = {"s": pd.Series(dfh["s_close"].values, index=pd.DatetimeIndex(dfh["ts"]) + pd.Timedelta(minutes=1))}
+    if pred.uses_futures:
+        closes["f"] = pd.Series(dfh["f_close"].values, index=pd.DatetimeIndex(dfh["ts"]) + pd.Timedelta(minutes=1))
+    keep = []
+    for p in pending:
+        t_end = p["T"] + pd.Timedelta(minutes=p["h"])
+        if t_end > T:
+            keep.append(p)
+            continue
+        c = closes[p["venue"]]
+        if t_end in c.index and p["T"] in c.index:
+            r = c[t_end] - c[p["T"]]
+            pred.update(p["key"], p["z_core"], p["z_sat"], r / (p["sigma"] * np.sqrt(p["h"])))
+    return keep
 
 
 def main():
@@ -57,61 +75,46 @@ def main():
     ap.add_argument("--variant", default="full", choices=["full", "spot"])
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--replay", default=None, help="UTC timestamp; use historical files instead of live APIs")
-    ap.add_argument("--delay", type=float, default=1.5, help="seconds to wait after the minute boundary")
+    ap.add_argument("--delay", type=float, default=1.0, help="seconds to wait after the minute boundary")
     a = ap.parse_args()
     pred = Predictor(a.variant)
-    # attach the per-confidence-decile historical hit rate to each target
-    for key, m in pred.meta["targets"].items():
-        m["hit_by_conf"] = None
     LOG.mkdir(exist_ok=True)
-    logf = LOG / "predictions.jsonl"
 
     if a.replay:
-        src = live.ReplaySource()
-        T = pd.Timestamp(a.replay).floor("min")
-        out, info = forecast(pred, src, T)
-        _attach_hist(out, pred)
+        out, info, _ = forecast(pred, live.ReplaySource(), pd.Timestamp(a.replay).floor("min"))
         print(render(out, info))
         return
 
     src = live.CachedSource(live.RestSource(use_futures=pred.uses_futures))
+    pending: list = []
     while True:
         now = pd.Timestamp.now(tz="UTC").tz_localize(None)
         T = now.floor("min")
-        target_time = T + pd.Timedelta(seconds=a.delay)
-        if now < target_time:
-            time.sleep((target_time - now).total_seconds())
+        wake = T + pd.Timedelta(seconds=a.delay)
+        if now < wake:
+            time.sleep((wake - now).total_seconds())
         t0 = time.time()
         try:
-            out, info = forecast(pred, src, T)
+            out, info, dfh = forecast(pred, src, T)
         except Exception as e:  # noqa: BLE001
             print(f"{T}: forecast failed: {e}", flush=True)
             if a.once:
                 raise
             time.sleep(5)
             continue
-        _attach_hist(out, pred)
         info["latency_s"] = round(time.time() - t0 + a.delay, 2)
         print(render(out, info) + f"\n(computed {info['latency_s']}s after bar close)", flush=True)
-        with open(logf, "a") as fh:
-            fh.write(json.dumps({**info, "forecasts": out.drop(columns=["hist_hit_at_conf"]).to_dict("records")}) + "\n")
+        with open(LOG / "predictions.jsonl", "a") as fh:
+            fh.write(json.dumps({**info, "variant": a.variant, "forecasts": out.to_dict("records")}) + "\n")
+        pending = learn(pred, pending, dfh, T)
+        sig = info["sigma_bp"] / 1e4
+        pending += [{"T": T, "key": r["target"], "venue": r["venue"], "h": int(r["h"]), "z_core": r["z_core"],
+                     "z_sat": r["z_sat"], "sigma": sig} for _, r in out.iterrows()]
+        pred.save_state()
         if a.once:
             break
         nxt = T + pd.Timedelta(minutes=1, seconds=a.delay)
         time.sleep(max(0.0, (nxt - pd.Timestamp.now(tz="UTC").tz_localize(None)).total_seconds()))
-
-
-def _attach_hist(out: pd.DataFrame, pred: Predictor):
-    hh = []
-    for _, r in out.iterrows():
-        m = pred.meta["targets"][r["target"]]
-        dec = m.get("hit_by_conf_decile") or []
-        if dec:
-            i = min(int(r["confidence_pct"] // 10), len(dec) - 1)
-            hh.append(dec[i])
-        else:
-            hh.append(None)
-    out["hist_hit_at_conf"] = hh
 
 
 if __name__ == "__main__":

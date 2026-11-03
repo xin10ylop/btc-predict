@@ -26,7 +26,8 @@ SEC_WIN = 1260         # seconds of per-second detail (>= PRE + 60 for alt vol e
 SPOT_API = ["https://data-api.binance.vision/api/v3", "https://api.binance.com/api/v3"]
 FUT_API = "https://fapi.binance.com"
 ALT_SYMBOLS = {"eth": "ETHUSDT", "sol": "SOLUSDT", "xrp": "XRPUSDT", "doge": "DOGEUSDT", "bnb": "BNBUSDT",
-               "btcfdusd": "BTCFDUSD", "btcusdc": "BTCUSDC"}
+               "btcfdusd": "BTCFDUSD", "btcusdc": "BTCUSDC",
+               **{a: a.upper() + "USDT" for a in altfeat.ALTS2}}
 SEC_COLS = ["o", "h", "l", "c", "v", "qv", "n", "bv"]
 
 
@@ -94,7 +95,7 @@ class ReplaySource:
         for d in days:
             x = self._day(venue, d.date())
             if x is None:
-                x = pd.DataFrame({c: np.zeros(86400) for c in SEC_COLS})
+                x = pd.DataFrame({c: (np.full(86400, np.nan) if c in "ohlc" else np.zeros(86400)) for c in SEC_COLS})
             parts.append(x)
         x = pd.concat(parts, ignore_index=True)
         off = int((t0 - days[0]).total_seconds())
@@ -103,8 +104,8 @@ class ReplaySource:
     def spot_seconds(self, symbol_key, t0_ms, n):
         return self._range({"btc": "spot"}.get(symbol_key, symbol_key), t0_ms, n)
 
-    def fut_seconds(self, t0_ms, n):
-        return self._range("um", t0_ms, n)
+    def fut_seconds(self, t0_ms, n, symbol="BTCUSDT"):
+        return self._range({"BTCUSDT": "um", "ETHUSDT": "ethum"}[symbol], t0_ms, n)
 
     def minutes(self, venue, t0_ms, n_min):
         """1-minute bars aggregated from the per-second history (= what the kline endpoint returns)."""
@@ -118,6 +119,16 @@ class ReplaySource:
             "bv": x["bv"].groupby(g).sum().values})
         out["c"] = pd.Series(out["c"]).ffill().values
         return out
+
+    def coinbase_minutes(self, t0_ms, n_min):
+        if "cb" not in self._cache:
+            p = self.SEC / "coinbase" / "coinbase_1m.parquet"
+            self._cache["cb"] = pd.read_parquet(p) if p.exists() else None
+        cb = self._cache["cb"]
+        if cb is None:
+            return None
+        t0 = pd.Timestamp(t0_ms, unit="ms")
+        return cb[(cb["ts"] >= t0) & (cb["ts"] < t0 + pd.Timedelta(minutes=n_min))].reset_index(drop=True)
 
     def premium(self, t0_ms, n_min):
         days = pd.date_range(pd.Timestamp(t0_ms, unit="ms").normalize(), pd.Timestamp(t0_ms + n_min * 60000, unit="ms").normalize())
@@ -180,14 +191,14 @@ class RestSource:
         return pd.DataFrame({"open_ms": a[:, 0].astype(np.int64), "c": a[:, 4], "h": a[:, 2], "l": a[:, 3], "v": a[:, 5],
                              "qv": a[:, 7], "n": a[:, 8], "bv": a[:, 9]})
 
-    def fut_seconds(self, t0_ms, n):
+    def fut_seconds(self, t0_ms, n, symbol="BTCUSDT"):
         """Per-second perp bars from aggTrades (same aggregation as the training data)."""
         trades, start, end = [], t0_ms, t0_ms + n * 1000
-        r = self._get(FUT_API, "/fapi/v1/aggTrades", {"symbol": "BTCUSDT", "startTime": start,
+        r = self._get(FUT_API, "/fapi/v1/aggTrades", {"symbol": symbol, "startTime": start,
                                                        "endTime": min(end - 1, start + 3_599_000), "limit": 1000})
         trades += r
         while r and len(r) == 1000 and r[-1]["T"] < end:
-            r = self._get(FUT_API, "/fapi/v1/aggTrades", {"symbol": "BTCUSDT", "fromId": r[-1]["a"] + 1, "limit": 1000})
+            r = self._get(FUT_API, "/fapi/v1/aggTrades", {"symbol": symbol, "fromId": r[-1]["a"] + 1, "limit": 1000})
             trades += [x for x in r if x["T"] < end]
         if not trades:
             return secfeat_empty(n)
@@ -196,6 +207,34 @@ class RestSource:
         m = np.array([x["m"] for x in trades], dtype=bool)
         from .download import trades_to_1s
         return trades_to_1s(t, p, q, m, n)
+
+    def coinbase_minutes(self, t0_ms, n_min):
+        """Coinbase BTC-USD 1m candles; the newest minute is rebuilt from trades (candles can lag)."""
+        url = "https://api.exchange.coinbase.com/products/BTC-USD"
+        rows, t = [], pd.Timestamp(t0_ms, unit="ms")
+        stop = t + pd.Timedelta(minutes=n_min)
+        while t < stop:
+            t2 = min(t + pd.Timedelta(minutes=300), stop)
+            r = self.s.get(url + "/candles", params={"granularity": 60, "start": t.isoformat(),
+                                                     "end": (t2 - pd.Timedelta(seconds=1)).isoformat()}, timeout=self.timeout)
+            if r.status_code == 200:
+                rows += r.json()
+            t = t2
+        df = pd.DataFrame(rows, columns=["time", "low", "high", "open", "close", "volume"]).drop_duplicates("time")
+        df["ts"] = pd.to_datetime(df["time"], unit="s")
+        last = stop - pd.Timedelta(minutes=1)
+        try:
+            tr = self.s.get(url + "/trades", params={"limit": 1000}, timeout=self.timeout).json()
+            tt = pd.DataFrame(tr)
+            tt["t"] = pd.to_datetime(tt["time"]).dt.tz_localize(None)
+            tt = tt[(tt["t"] >= last) & (tt["t"] < stop)].sort_values("t")
+            if len(tt):
+                df = df[df["ts"] != last]
+                df = pd.concat([df, pd.DataFrame({"ts": [last], "close": [float(tt["price"].iloc[-1])],
+                                                  "volume": [tt["size"].astype(float).sum()]})], ignore_index=True)
+        except Exception:  # noqa: BLE001
+            pass
+        return df.sort_values("ts").reset_index(drop=True)[["ts", "close", "volume"]]
 
     def premium(self, t0_ms, n_min):
         rows = self._klines(FUT_API, "/fapi/v1/premiumIndexKlines", "BTCUSDT", "1m", t0_ms, t0_ms + n_min * 60000, 1500)
@@ -264,10 +303,37 @@ def build_features(src, T: pd.Timestamp, use_futures: bool = True, last_n: int =
         x = Es if a == "eth" else src.spot_seconds(a, s0_ms, SEC_WIN)
         alts[a] = _arrays(x, ["c", "v", "bv", "n"])
     Srec = _arrays(S.iloc[nS - SEC_WIN:].reset_index(drop=True), ["c", "v"])
+    if hasattr(src, "coinbase_minutes"):
+        try:
+            cb = src.coinbase_minutes(h0_ms, HIST_MIN)
+        except Exception:  # noqa: BLE001
+            cb = None
+        if cb is not None and len(cb):
+            from . import coinbase
+            CBF = coinbase.features(df[["ts", "s_close", "sigma", "s_vol60"]], cb).iloc[-last_n:]
+        else:
+            CBF = None
+    else:
+        CBF = None
     endr = SEC_WIN - 1 - 60 * np.arange(last_n)[::-1]
     A = altfeat.alt_from_arrays(Srec, {k: alts[k] for k in altfeat.ALTS}, {k: alts[k] for k in altfeat.BOOKS}, endr,
                                 df["ts"].values[-last_n:])
-    return df.reset_index(drop=True), A.drop(columns="ts").reset_index(drop=True)
+    A = A.drop(columns="ts").reset_index(drop=True)
+    # wide swarm (17 alts) + ETH perpetual
+    alts_all = dict(alts)
+    for a2 in altfeat.ALTS2:
+        alts_all[a2] = _arrays(src.spot_seconds(a2, s0_ms, SEC_WIN), ["c", "v", "bv"])
+    if use_futures:
+        Frec = _arrays(Fs, ["c", "v"])
+        ethum = _arrays(src.fut_seconds(s0_ms, SEC_WIN, "ETHUSDT"), ["c", "v", "bv"])
+    else:
+        Frec, ethum = None, None
+    A2 = altfeat.alt2_from_arrays(Srec, Frec, {k: alts_all[k] for k in altfeat.ALTS + altfeat.ALTS2}, ethum, endr,
+                                  df["ts"].values[-last_n:])
+    A = pd.concat([A, A2.drop(columns="ts").reset_index(drop=True)], axis=1)
+    if CBF is not None:
+        A = pd.concat([A, CBF.reset_index(drop=True)], axis=1)
+    return df.reset_index(drop=True), A
 
 
 def model_inputs(df_hist: pd.DataFrame, A: pd.DataFrame) -> pd.DataFrame:
@@ -318,8 +384,8 @@ class CachedSource:
     def spot_seconds(self, symbol_key, t0_ms, n):
         return self._get(("s", symbol_key), 1000, lambda a, k: self.src.spot_seconds(symbol_key, a, k), t0_ms, n)
 
-    def fut_seconds(self, t0_ms, n):
-        return self._get(("f",), 1000, self.src.fut_seconds, t0_ms, n)
+    def fut_seconds(self, t0_ms, n, symbol="BTCUSDT"):
+        return self._get(("f", symbol), 1000, lambda a, k: self.src.fut_seconds(a, k, symbol), t0_ms, n)
 
     def minutes(self, venue, t0_ms, n_min):
         def fetch(a, k):
@@ -334,3 +400,19 @@ class CachedSource:
             full = pd.DataFrame({"open_ms": a + 60000 * np.arange(k)})
             return full.merge(m, on="open_ms", how="left")
         return self._get(("p",), 60000, fetch, t0_ms, n_min)
+
+    def coinbase_minutes(self, t0_ms, n_min):
+        key = ("cb",)
+        c = self.cache.get(key)
+        if c is not None:
+            df = c
+            t_last = df["ts"].max()
+            start = int((t_last - pd.Timedelta(minutes=2)).value // 10**6)
+            new = self.src.coinbase_minutes(start, int((t0_ms + n_min * 60000 - start) // 60000))
+            df = pd.concat([df[df["ts"] < pd.Timestamp(start, unit="ms")], new]).drop_duplicates("ts", keep="last")
+        else:
+            df = self.src.coinbase_minutes(t0_ms, n_min)
+        t0 = pd.Timestamp(t0_ms, unit="ms")
+        df = df[df["ts"] >= t0].sort_values("ts").reset_index(drop=True)
+        self.cache[key] = df
+        return df

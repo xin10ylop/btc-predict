@@ -24,7 +24,7 @@ PRED.mkdir(exist_ok=True)
 _cache = {}
 
 
-def load(extra: bool = True, alts: bool = False):
+def load(extra: bool = True, alts: bool = False, more: str = ""):
     if "df" not in _cache:
         df = pd.read_parquet(FEAT / "panel.parquet")
         df = df[df["ts"] >= "2025-05-03"].reset_index(drop=True)
@@ -37,6 +37,8 @@ def load(extra: bool = True, alts: bool = False):
         X = pd.concat([X, _cache["Xe"]], axis=1)
     if alts and (FEAT / "Xalt.parquet").exists():
         X = pd.concat([X, pd.read_parquet(FEAT / "Xalt.parquet")], axis=1)
+    for f in [x for x in more.split(",") if x]:
+        X = pd.concat([X, pd.read_parquet(FEAT / f)], axis=1)
     return df, X
 
 
@@ -73,11 +75,15 @@ def main():
     ap.add_argument("--params", default="{}")
     ap.add_argument("--train_days", type=int, default=None)
     ap.add_argument("--features", default=None, help="comma list or @file")
+    ap.add_argument("--more", default="", help="extra feature parquet files in data/features (comma list)")
+    ap.add_argument("--add", default="", help="prefixes of columns from --more files to add to the feature list")
     a = ap.parse_args()
 
-    df, X = load(extra=not a.no_extra, alts=a.alts)
+    df, X = load(extra=not a.no_extra, alts=a.alts, more=a.more)
     if a.features:
         cols = open(a.features[1:]).read().split() if a.features.startswith("@") else a.features.split(",")
+        if a.add:
+            cols += [c for c in X.columns if c.startswith(tuple(a.add.split(","))) and c not in cols]
         X = X[[c for c in cols if c in X]]
     h = a.h
     scale = F.target_scale(df, h)

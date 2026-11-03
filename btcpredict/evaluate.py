@@ -106,3 +106,28 @@ def summarize(name: str, df: pd.DataFrame, pred: pd.Series, h: int, venue="s", d
             out[f"ic{tag}"] = r["ic"]
             out[f"hit{tag}"] = r["hit"]
     return out
+
+
+def paired_block_bootstrap(ts: pd.Series, y: np.ndarray, p1: np.ndarray, p2: np.ndarray, n_boot: int = 2000,
+                           block: str = "D", seed: int = 0) -> dict:
+    """IC(p2) - IC(p1) with a day-block bootstrap (keeps intraday dependence intact).
+    Returns the point difference, a 95% CI and the one-sided p-value of (diff <= 0)."""
+    d = pd.DataFrame({"g": pd.DatetimeIndex(ts).floor(block), "y": y, "a": p1, "b": p2}).dropna()
+    # per-block sufficient statistics for correlations
+    def stats(x):
+        return pd.Series({"n": len(x), "sy": x.y.sum(), "syy": (x.y ** 2).sum(),
+                          "sa": x.a.sum(), "saa": (x.a ** 2).sum(), "say": (x.a * x.y).sum(),
+                          "sb": x.b.sum(), "sbb": (x.b ** 2).sum(), "sby": (x.b * x.y).sum()})
+    S = d.groupby("g").apply(stats, include_groups=False).values
+    def corr_diff(T):
+        n, sy, syy, sa, saa, say, sb, sbb, sby = T
+        vy = syy / n - (sy / n) ** 2
+        ca = (say / n - sa * sy / n ** 2) / np.sqrt((saa / n - (sa / n) ** 2) * vy)
+        cb = (sby / n - sb * sy / n ** 2) / np.sqrt((sbb / n - (sb / n) ** 2) * vy)
+        return cb - ca
+    point = corr_diff(S.sum(0))
+    rng = np.random.default_rng(seed)
+    k = len(S)
+    boots = np.array([corr_diff(S[rng.integers(0, k, k)].sum(0)) for _ in range(n_boot)])
+    return {"diff": float(point), "ci95": [float(np.quantile(boots, 0.025)), float(np.quantile(boots, 0.975))],
+            "p_le_0": float(np.mean(boots <= 0)), "blocks": int(k)}
