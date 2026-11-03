@@ -24,13 +24,20 @@ def day_alt(day: dt.date) -> pd.DataFrame | None:
         return None
     m = np.arange(NMIN)
     end = PRE + 60 * m + 59
-    f = {"ts": (pd.Timestamp(day) + pd.to_timedelta(60 * m, unit="s")).values}
+    alts = {a: _extended(a, day, ["c", "v", "bv"]) for a in ALTS}
+    books = {b: _extended(b, day, ["c", "v", "n"]) for b in BOOKS}
+    return alt_from_arrays(S, alts, books, end, (pd.Timestamp(day) + pd.to_timedelta(60 * m, unit="s")).values)
+
+
+def alt_from_arrays(S: dict, alts: dict, books: dict, end: np.ndarray, ts: np.ndarray) -> pd.DataFrame:
+    """Shared by history and live. Needs >= PRE+60 seconds of history before end[0]."""
+    f = {"ts": ts}
     lpS = S["lp"]
     rS = np.diff(lpS, prepend=lpS[0])
     sigS = np.sqrt(pd.Series(rS ** 2).rolling(PRE, min_periods=60).mean().to_numpy() + 1e-14)
     zs = []
     for a in ALTS:
-        A = _extended(a, day, ["c", "v", "bv"])
+        A = alts.get(a)
         if A is None:
             continue
         lp = A["lp"]
@@ -51,7 +58,7 @@ def day_alt(day: dt.date) -> pd.DataFrame | None:
         btc_z = (lpS[end] - lpS[end - w]) / (sigS[end] * np.sqrt(w))
         f[f"alt_swarm_minus_btc{w}"] = f[f"alt_swarm_z{w}"] - btc_z
     for b in BOOKS:
-        B = _extended(b, day, ["c", "v", "n"])
+        B = books.get(b)
         if B is None:
             continue
         dev = B["lp"] - lpS

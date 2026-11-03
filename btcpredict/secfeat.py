@@ -101,10 +101,23 @@ def day_features(day: dt.date) -> pd.DataFrame | None:
     t0 = pd.Timestamp(day, tz="UTC")
     m = np.arange(NMIN)
     end = PRE + 60 * m + 59              # last second index belonging to bar m (info boundary)
-    f: dict[str, np.ndarray] = {"ts": (t0 + pd.to_timedelta(60 * m, unit="s")).values}
+    out = features_from_arrays(S, F, E, end, (t0 + pd.to_timedelta(60 * m, unit="s")).values, forward=True)
+    if not S["has_next"]:
+        # last day available: forward latency prices for the last minute are unknown
+        for d in LATENCY:
+            out.loc[out.index[-1], [f"px_s_d{d}", f"px_f_d{d}"]] = np.nan
+    return out
+
+
+def features_from_arrays(S: dict, F: dict, E: dict | None, end: np.ndarray, ts: np.ndarray,
+                         forward: bool = False) -> pd.DataFrame:
+    """Core feature computation on per-second arrays (dicts with o h l c v n bv ... and 'lp').
+    `end` = index of the last second of each bar. Needs >= 660 seconds of history before end[0].
+    Used both for history (day files) and live buffers, so training and live share one code path."""
+    f: dict[str, np.ndarray] = {"ts": ts}
 
     # center log prices for numerical stability of area computations
-    ref = S["lp"][PRE]
+    ref = S["lp"][end[0] - 59]
     lpS = S["lp"] - ref
     lpF = F["lp"] - ref
     basis = lpF - lpS
@@ -181,15 +194,12 @@ def day_features(day: dt.date) -> pd.DataFrame | None:
             f[f"levy_es{w}"] = _levy(lpE, lpS, end, w)
         f["e_close"] = E["lp"][end]
     # ---------------- forward prices for targets & latency analysis (NOT features)
-    for d in LATENCY:
-        f[f"px_s_d{d}"] = lpS[end + d]
-        f[f"px_f_d{d}"] = lpF[end + d]
+    if forward:
+        for d in LATENCY:
+            f[f"px_s_d{d}"] = lpS[end + d]
+            f[f"px_f_d{d}"] = lpF[end + d]
     out = pd.DataFrame(f)
     out["ref"] = ref
-    if not S["has_next"]:
-        # last day available: forward latency prices for the last minute are unknown
-        for d in LATENCY:
-            out.loc[out.index[-1], [f"px_s_d{d}", f"px_f_d{d}"]] = np.nan
     return out
 
 
