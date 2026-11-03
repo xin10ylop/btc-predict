@@ -34,7 +34,7 @@ def forecast(pred: Predictor, src, T: pd.Timestamp):
     sigma = dfh["sigma"].values[-1:]
     sg = dfh["sigma"].astype(float)
     vrel = np.log(sg / sg.rolling(1440, min_periods=240).median()).values[-1:]
-    out = pred.predict(X, sigma, vrel)
+    out = pred.predict(X, sigma, vrel, T=T)
     forecast.last_X = X
     # per-second closes of the recent window (cached; used to score sub-minute forecasts)
     # (same request arguments as build_features -> served from the cache, no extra downloads)

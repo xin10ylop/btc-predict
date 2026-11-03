@@ -162,6 +162,7 @@ The guiding question: does the system stay honest when the market changes charac
 | Scale-free features (returns in units of current vol, flows in units of typical volume) | kept | a calm month and a wild month look alike to the model |
 | Volatility-state features (vol vs its slow average, 5/60/240-min RV ratios) | kept | the forecast's own magnitude already shrinks in storms |
 | Core + satellite + online prior-RLS (h=1) | kept | absorbs venue/structure breaks; FDUSD month perp IC 0.015 → 0.033 |
+| New-York-hour band width factor (US equity open, 8:30 ET releases; DST-aware) | **kept** | fit May–Jul, tested Aug–Oct: open-hour coverage 75–78% → 78–81%; overall unchanged |
 | Regime-conditional 80/95% bands (vol vs its 1-day median, 9 bins) | **kept** | coverage 78–81% in calm, normal and stormy markets vs 76–84% for static bands; also narrower |
 | P(up) with vol-interaction terms / 3–14-day adaptive windows / confidence×regime table | rejected | no log-loss gain; adaptive windows chase noise |
 | Rolling 120-day retraining instead of expanding | rejected | IC 0.050 vs 0.053 |

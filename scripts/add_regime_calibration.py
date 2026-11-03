@@ -49,6 +49,19 @@ for variant, vm in meta.items():
             src = zres[mm] if mm.sum() > 2000 else zres[ok]
             table.append([float(np.quantile(src, q)) for q in (0.025, 0.1, 0.5, 0.9, 0.975)])
         m["band_table"] = table
+        # New-York-hour width factor (US equity open / 8:30 ET macro releases; DST-aware)
+        et = (pr.index + pd.Timedelta(minutes=1)).tz_localize("UTC").tz_convert("America/New_York").hour
+        lo0 = np.array([table[j][1] for j in b]); hi0 = np.array([table[j][3] for j in b])
+        fac = []
+        for hh in range(24):
+            mm = ok & (et == hh)
+            r, lo, hi = zres[mm], lo0[mm], hi0[mm]
+            a_, b_ = 0.5, 2.5
+            for _ in range(30):
+                k = (a_ + b_) / 2
+                a_, b_ = (k, b_) if np.mean((r >= k * lo) & (r <= k * hi)) < 0.8 else (a_, k)
+            fac.append(round(float(k), 4))
+        m["et_hour_band_factor"] = fac
         reg = np.digitize(vrel, REG_EDGES)
         nz = np.isfinite(y) & (y != 0)
         qs = np.quantile(np.abs(z[nz]), np.linspace(0.1, 0.9, 9))

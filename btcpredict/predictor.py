@@ -71,7 +71,8 @@ class Predictor:
         g = int(np.digitize(vrel, r["regime_edges"]))
         return g, r["regime_names"][g]
 
-    def predict(self, X: pd.DataFrame, sigma: np.ndarray, vrel: np.ndarray | None = None) -> pd.DataFrame:
+    def predict(self, X: pd.DataFrame, sigma: np.ndarray, vrel: np.ndarray | None = None,
+                T: pd.Timestamp | None = None) -> pd.DataFrame:
         """X: feature rows; sigma: per-minute volatility (log-return units); vrel: log(sigma / 1-day
         median sigma) -> regime-conditional bands and hit rates (falls back to static if absent)."""
         raw = self.raw(X)
@@ -93,7 +94,11 @@ class Predictor:
                     q5 = m["band_table"][int(np.digitize(vrel[i], reg["band_edges"]))]
                     q = dict(zip(("0.025", "0.1", "0.5", "0.9", "0.975"), q5))
                 else:
-                    q = m["resid_q"]
+                    q = dict(m["resid_q"])
+                if T is not None and "et_hour_band_factor" in m:
+                    et_h = pd.Timestamp(T).tz_localize("UTC").tz_convert("America/New_York").hour
+                    k = m["et_hour_band_factor"][et_h]
+                    q = {kk: (vv if kk == "0.5" else vv * k) for kk, vv in q.items()}
                 if "hit_table" in m:
                     d = int(np.digitize(abs(z[i]), m["absz_deciles"]))
                     hh = m["hit_table"][d][g]

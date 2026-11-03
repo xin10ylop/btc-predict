@@ -132,6 +132,11 @@ by larger moves, and storms by smaller ones.
 | static bands | 75.9% | 80.1% | 83.9% | 85.7% | 24.4 bp |
 | **regime-conditional (shipped)** | **78.5%** | **79.3%** | **80.6%** | **79.6%** | **23.4 bp** |
 
+Bands are also scaled by **New York hour**, which is DST-aware. BTC's moves are 10–18% larger
+in the hour of the US equity open (9:30 ET) and slightly larger around the 8:30 ET macro
+releases. Fitted on May–Jul and tested on Aug–Oct, this lifted coverage in the open hour from
+75–78% to 78–81%, with overall coverage unchanged at ~80%.
+
 The P(up) map was also tested for regime dependence:
 * adaptive windows of 3, 7 and 14 days;
 * volatility-interaction terms;
