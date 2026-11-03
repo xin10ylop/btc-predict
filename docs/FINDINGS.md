@@ -86,7 +86,7 @@ holdout results are in the README.
   that were found show near-zero return IC for zero-shot use on crypto (Kronos paper:
   crypto-group IC ≈ 0.037 vs 0.045 for DLinear). The local Kronos benchmark was not run, because
   executing code cloned from GitHub was blocked in this environment.
-  `scripts/experiments/bench_foundation.py` is ready if you want to run it yourself.
+  `scripts/research/experiments/bench_foundation.py` is ready if you want to run it yourself.
 
 ## 2b. The adaptive layer: where online learning helps and where it hurts
 
@@ -202,7 +202,7 @@ the real code path on real data before trusting it.**
 A backtest scores features computed from *final* historical data. A live system computes them
 seconds after the bar close, from data that may not be final yet. The live run therefore logged
 each feature vector at forecast time and compared it with the same minute recomputed minutes
-later from complete data (`scripts/live_skew_now.py`).
+later from complete data (`scripts/live/live_skew_now.py`).
 
 | source of skew | symptom | fix | after the fix |
 |---|---|---|---|
@@ -211,7 +211,7 @@ later from complete data (`scripts/live_skew_now.py`).
 | **Binance 1 s klines are not final at T+0.5–1.0 s** | ETH and alt-coin seconds sometimes missing or changed | Fetch at T+2.0 s; data were final from T+1.5 s in every trial | Binance-side features identical; 4 of 5 minutes give bit-identical scores |
 
 The first live run (13:51–14:33 UTC, 1-minute hit rate weak) used the skewed path, and its log is
-kept as `logs/predictions_run1_coinbase_skew.jsonl`. **Lesson: parity on historical data is
+kept as `reports/live/predictions_2026-11-03_run1_discarded_skew.jsonl`. **Lesson: parity on historical data is
 necessary but not sufficient. Also check live-at-forecast-time against final data, because
 exchanges revise and publish late.**
 
@@ -239,4 +239,4 @@ This is consistent with the holdout, but far too short to estimate the level pre
 6. Heavily regularized trees: ≥ 2000 rows per leaf, 50% feature subsampling, Huber loss, and
    targets clipped at ±6σ.
 7. **Live/training parity tests.** The live code path reproduces the training features exactly
-   (`scripts/check_live_parity.py`).
+   (`scripts/live/check_live_parity.py`).

@@ -9,3 +9,6 @@ models/*.txt
 !models/*.txt.gz
 logs/
 reports/preds/
+*.egg-info/
+build/
+dist/

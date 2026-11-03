@@ -1,0 +1,242 @@
+{
+ "s10s": {
+  "top100%": {
+   "edge_bp_d0": 0.381,
+   "edge_bp_d2": 0.202,
+   "edge_bp_d5": 0.114,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 1.21
+  },
+  "top10%": {
+   "edge_bp_d0": 0.783,
+   "edge_bp_d2": 0.452,
+   "edge_bp_d5": 0.277,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 1.15
+  },
+  "top1%": {
+   "edge_bp_d0": 0.87,
+   "edge_bp_d2": 0.509,
+   "edge_bp_d5": 0.331,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 1.12
+  },
+  "top0.1%": {
+   "edge_bp_d0": 0.652,
+   "edge_bp_d2": 0.351,
+   "edge_bp_d5": 0.318,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 1.01
+  }
+ },
+ "f10s": {
+  "top100%": {
+   "edge_bp_d0": 0.26,
+   "edge_bp_d2": 0.114,
+   "edge_bp_d5": 0.059,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 1.37
+  },
+  "top10%": {
+   "edge_bp_d0": 0.57,
+   "edge_bp_d2": 0.264,
+   "edge_bp_d5": 0.132,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 1.19
+  },
+  "top1%": {
+   "edge_bp_d0": 0.696,
+   "edge_bp_d2": 0.322,
+   "edge_bp_d5": 0.19,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 1.17
+  },
+  "top0.1%": {
+   "edge_bp_d0": 0.74,
+   "edge_bp_d2": 0.377,
+   "edge_bp_d5": 0.295,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 1.09
+  }
+ },
+ "s15s": {
+  "top100%": {
+   "edge_bp_d0": 0.412,
+   "edge_bp_d2": 0.231,
+   "edge_bp_d5": 0.136,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 1.54
+  },
+  "top10%": {
+   "edge_bp_d0": 0.84,
+   "edge_bp_d2": 0.516,
+   "edge_bp_d5": 0.332,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 1.31
+  },
+  "top1%": {
+   "edge_bp_d0": 0.963,
+   "edge_bp_d2": 0.594,
+   "edge_bp_d5": 0.402,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 1.22
+  },
+  "top0.1%": {
+   "edge_bp_d0": 0.745,
+   "edge_bp_d2": 0.415,
+   "edge_bp_d5": 0.352,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 1.09
+  }
+ },
+ "f15s": {
+  "top100%": {
+   "edge_bp_d0": 0.274,
+   "edge_bp_d2": 0.123,
+   "edge_bp_d5": 0.063,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 1.7
+  },
+  "top10%": {
+   "edge_bp_d0": 0.573,
+   "edge_bp_d2": 0.276,
+   "edge_bp_d5": 0.154,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 1.42
+  },
+  "top1%": {
+   "edge_bp_d0": 0.801,
+   "edge_bp_d2": 0.42,
+   "edge_bp_d5": 0.285,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 1.43
+  },
+  "top0.1%": {
+   "edge_bp_d0": 1.243,
+   "edge_bp_d2": 0.747,
+   "edge_bp_d5": 0.55,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 1.72
+  }
+ },
+ "s1": {
+  "top100%": {
+   "edge_bp_d0": 0.493,
+   "edge_bp_d2": 0.316,
+   "edge_bp_d5": 0.211,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 3.24
+  },
+  "top10%": {
+   "edge_bp_d0": 0.901,
+   "edge_bp_d2": 0.668,
+   "edge_bp_d5": 0.512,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 2.04
+  },
+  "top1%": {
+   "edge_bp_d0": 1.017,
+   "edge_bp_d2": 0.766,
+   "edge_bp_d5": 0.613,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 1.68
+  },
+  "top0.1%": {
+   "edge_bp_d0": 1.223,
+   "edge_bp_d2": 0.99,
+   "edge_bp_d5": 0.773,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 1.62
+  }
+ },
+ "f1": {
+  "top100%": {
+   "edge_bp_d0": 0.302,
+   "edge_bp_d2": 0.17,
+   "edge_bp_d5": 0.116,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 3.34
+  },
+  "top10%": {
+   "edge_bp_d0": 0.611,
+   "edge_bp_d2": 0.391,
+   "edge_bp_d5": 0.281,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 2.49
+  },
+  "top1%": {
+   "edge_bp_d0": 0.9,
+   "edge_bp_d2": 0.641,
+   "edge_bp_d5": 0.52,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 2.15
+  },
+  "top0.1%": {
+   "edge_bp_d0": 0.98,
+   "edge_bp_d2": 0.581,
+   "edge_bp_d5": 0.37,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 2.1
+  }
+ },
+ "s5": {
+  "top100%": {
+   "edge_bp_d0": 0.492,
+   "edge_bp_d2": 0.354,
+   "edge_bp_d5": 0.275,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 7.44
+  },
+  "top10%": {
+   "edge_bp_d0": 1.022,
+   "edge_bp_d2": 0.826,
+   "edge_bp_d5": 0.699,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 4.96
+  },
+  "top1%": {
+   "edge_bp_d0": 1.153,
+   "edge_bp_d2": 1.012,
+   "edge_bp_d5": 0.922,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 3.22
+  },
+  "top0.1%": {
+   "edge_bp_d0": 1.222,
+   "edge_bp_d2": 1.134,
+   "edge_bp_d5": 1.039,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 2.25
+  }
+ },
+ "f5": {
+  "top100%": {
+   "edge_bp_d0": 0.277,
+   "edge_bp_d2": 0.191,
+   "edge_bp_d5": 0.16,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 7.48
+  },
+  "top10%": {
+   "edge_bp_d0": 0.788,
+   "edge_bp_d2": 0.636,
+   "edge_bp_d5": 0.571,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 6.73
+  },
+  "top1%": {
+   "edge_bp_d0": 1.488,
+   "edge_bp_d2": 1.333,
+   "edge_bp_d5": 1.223,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 6.73
+  },
+  "top0.1%": {
+   "edge_bp_d0": 1.359,
+   "edge_bp_d2": 1.289,
+   "edge_bp_d5": 1.215,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 6.68
+  }
+ }
+}

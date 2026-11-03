@@ -2,7 +2,9 @@
 import numpy as np
 import pandas as pd
 
-from btcpredict import download, online, secfeat
+from btcpredict.data import binance as download
+from btcpredict.features import seconds as secfeat
+from btcpredict.modeling import online
 
 
 def test_trades_to_1s_aggregation():
@@ -69,7 +71,7 @@ def test_prior_rls_state_roundtrip():
 
 
 def test_minute_embedding_preserves_minute_aggregates():
-    from btcpredict import live
+    from btcpredict.live import sources as live
     t0 = 1_700_000_000_000
     m = pd.DataFrame({"open_ms": t0 + 60000 * np.arange(3), "c": [1.0, 2.0, 3.0], "h": [1.5, 2.5, 3.5],
                       "l": [0.5, 1.5, 2.5], "v": [10.0, 0.0, 5.0], "qv": [10.0, 0.0, 15.0], "n": [3, 0, 2], "bv": [6.0, 0.0, 1.0]})

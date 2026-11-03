@@ -101,11 +101,11 @@ in which Binance spot finishes catching up with the perpetual, Coinbase and the 
 * **Faster delivery:** a websocket client co-located with the exchanges would keep far more of
   the edge than this REST-polling CLI.
 
-![latency seconds](reports/latency_decay_holdout_sub.png)
+![latency seconds](reports/figures/latency_decay_holdout_sub.png)
 
-![latency](reports/latency_decay_holdout.png)
+![latency](reports/figures/latency_decay_holdout.png)
 
-![confidence](reports/hit_by_confidence_holdout.png)
+![confidence](reports/figures/hit_by_confidence_holdout.png)
 
 ### When is Bitcoin predictable? (holdout, full model)
 
@@ -199,7 +199,7 @@ How to read this table:
   This run also predates the New-York-hour and variance-ratio band factors.
 * An earlier live run (13:51–14:33 UTC) used a data path with training/serving skew. It was
   discarded, the bug was fixed, and the run was repeated; see below. Score your own runs with
-  `python scripts/score_live_log.py`.
+  `python scripts/live/score_live_log.py`.
 
 
 
@@ -220,7 +220,7 @@ regimes flip, and arbitrage capital comes and goes. Each defense below was teste
    markets, and right after volatility shocks.
 5. **Rejected:** shorter retraining windows and adaptive P(up) calibration. Both chase noise
    (FINDINGS §3c).
-6. **Refresh.** `scripts/monthly_refresh.sh` retrains on all data each month. A full re-validation
+6. **Refresh.** `make refresh` (`scripts/pipeline/monthly_refresh.sh`) retrains on all data each month. A full re-validation
    (`train_final.py`, ~2.5 h) every few months re-checks the calibration on fresh out-of-sample
    data.
 
@@ -242,7 +242,7 @@ Both distorted the top features. The fixes:
 
 After the fixes, **29 of 30 live model scores are bit-identical** to scores recomputed from
 final data. Details are in [FINDINGS §3f](docs/FINDINGS.md). The live CLI logs every feature
-vector, and `scripts/check_live_skew.py` re-verifies them against the official daily files.
+vector, and `scripts/live/check_live_skew.py` re-verifies them against the official daily files.
 
 ## How it works
 
@@ -302,72 +302,42 @@ everything rejected: [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
 ## Quick start
 
-The trained models are included (`models/*.txt.gz`), so you can run the live forecaster right away:
+The trained models are included (`models/*.txt.gz`), so you can forecast immediately:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ```bash
-python -m btcpredict.run_live --variant spot
+python -m btcpredict.live --variant spot
 ```
 
-Use `--variant full` if Binance USD-M futures are available where you are. To rebuild everything
-from scratch:
-
-1. Data. This takes about 45 minutes and ~20 GB of disk, all from public endpoints with no API keys.
+Use `--variant full` if Binance USD-M futures are reachable where you are. It forecasts both
+spot and the perp, and is slightly stronger. Every forecast is appended to
+`logs/predictions.jsonl`. Score it against what actually happened:
 
 ```bash
-python -m btcpredict.download --start 2025-05-01 --end 2026-11-02 --workers 8
+python scripts/live/score_live_log.py
 ```
 
-```bash
-python -m btcpredict.download --start 2025-05-01 --end 2026-11-02 --jobs sol,xrp,doge,bnb,btcfdusd,btcusdc,ethum,ada,avax,link,ltc,trx,sui,pepe,shib,dot,ton,near,bch
-```
+Everything else is one `make` target (`make help`):
 
-```bash
-python -c "from btcpredict import coinbase; coinbase.download('2025-05-01','2026-11-03')"
-```
+| command | what it does |
+|---|---|
+| `make test` | unit tests (no data needed) |
+| `make live VARIANT=spot` | the live forecaster |
+| `make replay T="2026-10-15 13:37"` | one forecast for a past minute from local data |
+| `make data` | download all raw data from public endpoints, no API keys (~20 GB, ~45 min) |
+| `make features` | per-second bars → minute panel, targets, model matrices |
+| `make train` | frozen-holdout walk-forward + production models (~3 h) |
+| `make calibrate` | regime-aware bands and hit tables, compress models |
+| `make reports` | results table, charts, edge-vs-costs |
+| `make parity` | prove the live feature/score path equals training |
+| `make skew` | compare live-at-forecast-time data with final data on the real market |
+| `make refresh` | monthly: new data → retrain production models |
 
-2. Features.
-
-```bash
-python -m btcpredict.panel --start 2025-05-01 --end 2026-11-02
-```
-
-```bash
-python scripts/build_features.py
-```
-
-3. Holdout evaluation and production models.
-
-```bash
-python scripts/train_final.py --variants full,spot
-```
-
-4. Run live. Each forecast is delivered about 3 seconds after the bar close.
-
-```bash
-python -m btcpredict.run_live --variant full
-```
-
-If Binance futures is unavailable where you are, use the spot-only variant:
-
-```bash
-python -m btcpredict.run_live --variant spot
-```
-
-Replay any historical minute offline:
-
-```bash
-python -m btcpredict.run_live --variant full --replay "2026-10-15 13:37"
-```
-
-5. Score your live log against realized prices.
-
-```bash
-python scripts/score_live_log.py
-```
+**New to the codebase, human or AI agent?** Start with [`AGENTS.md`](AGENTS.md). For internals,
+read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Example output (a real forecast from the live forward test, spot-only model):
 
@@ -384,23 +354,26 @@ spot+5m   0.512    +0.54 [  -15.6,  +15.8] [   77,271.5,   77,514.4]     34     
 
 ## Repository layout
 
-| path | what |
-|---|---|
-| `btcpredict/download.py` | bulk data from data.binance.vision → compact per-second bars |
-| `btcpredict/secfeat.py` | second-level features at each bar close (shared by training and live) |
-| `btcpredict/altfeat.py` | alt-coin swarm, cross-book, ETH-perp features |
-| `btcpredict/coinbase.py` | Coinbase premium features |
-| `btcpredict/panel.py`, `features.py` | minute-level panel, scale-free model matrix, targets |
-| `btcpredict/subminute.py` | 10 s / 15 s targets (and delivery-delay variants) from per-second prices |
-| `btcpredict/evaluate.py` | purged walk-forward, metrics, paired day-block bootstrap |
-| `btcpredict/online.py` | online discounted ridge (adaptive layer) |
-| `btcpredict/live.py`, `run_live.py`, `predictor.py` | live data sources, caching, forecaster CLI |
-| `scripts/run_model.py` | single walk-forward experiment (cached OOS predictions) |
-| `scripts/train_final.py` | holdout evaluation + production models + calibration |
-| `scripts/check_live_parity.py` | proves live features and model scores == training |
-| `scripts/live_skew_now.py` | live-at-forecast-time vs final-data feature/score comparison (training/serving skew) |
-| `scripts/check_live_skew.py` | next-day check of logged live features against the official daily files |
-| `scripts/monthly_refresh.sh` | pull new data, rebuild features, retrain production models (~1–1.5 h) |
-| `scripts/experiments/` | the research experiments behind docs/FINDINGS.md (every run's args are in `reports/results.jsonl`) |
-| `tests/` | unit tests for the core math (`python -m pytest -q tests`) |
-| `docs/FINDINGS.md` | the research log: mechanisms, evidence, rejected ideas |
+```
+btcpredict/              Python package: one subpackage per pipeline stage
+  config.py              every path and constant
+  data/                  1. download: binance.py (bulk daily files -> per-second bars), coinbase.py
+  features/              2. features & targets, shared by training AND live
+                            seconds.py · panel.py · matrix.py · crossasset.py · coinbase.py · subminute.py
+  modeling/              3. gbm.py (LightGBM) · online.py (PriorRLS ensemble) · calibrate.py · evaluate.py
+  live/                  4. sources.py (REST / replay / cache) · predictor.py · cli.py (python -m btcpredict.live)
+  research/              tested and rejected: tcn.py (1-s neural net), okx.py (third venue)
+configs/feature_sets/    which columns each model uses (production + research)
+models/                  production boosters (*.txt.gz) + meta.json (features, calibration, online state)
+scripts/
+  pipeline/              build_features · train_final · add_regime_calibration · monthly_refresh.sh
+  live/                  score_live_log · check_live_parity · live_skew_now · check_live_skew
+  reports/               results_table · make_report (charts) · edge_vs_costs
+  research/              run_model.py (one walk-forward experiment) + experiments/ (historical runs)
+reports/                 holdout/ · confirm/ · figures/ · dev/ · research/ · live/   (see reports/README.md)
+docs/                    ARCHITECTURE.md (how it works) · FINDINGS.md (research log: why)
+tests/                   unit tests for the core math
+AGENTS.md                A-to-Z guide for agents and new contributors
+Makefile, pyproject.toml one-command workflows, installable package
+data/, logs/             local only (git-ignored): market data, feature matrices, live logs
+```
