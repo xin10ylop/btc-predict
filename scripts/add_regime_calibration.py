@@ -19,7 +19,10 @@ BAND_EDGES = [-0.6, -0.35, -0.15, 0.0, 0.15, 0.35, 0.6, 0.9]
 meta_path = MODELS / "meta.json"
 meta = json.loads(meta_path.read_text())
 panel = pd.read_parquet(FEAT / "panel.parquet", columns=["ts", "sigma"] + [f"y_{v}{h}" for v in "sf" for h in range(1, 6)])
-panel = panel[panel["ts"] >= "2025-05-03"].set_index("ts")
+panel = panel[panel["ts"] >= "2025-05-03"].reset_index(drop=True)
+if (FEAT / "Ysub.parquet").exists():
+    panel = pd.concat([panel, pd.read_parquet(FEAT / "Ysub.parquet")], axis=1)
+panel = panel.set_index("ts")
 sig = panel["sigma"]
 vrel_all = np.log(sig / sig.rolling(1440, min_periods=240).median())
 REG_EDGES = [float(x) for x in np.nanquantile(vrel_all[vrel_all.index < "2026-05-01"], [1 / 3, 2 / 3])]

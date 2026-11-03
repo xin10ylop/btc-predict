@@ -34,13 +34,16 @@ ap.add_argument("--keys", default="s1,f1,s5,f5")
 ap.add_argument("--tag", default="holdout")
 a = ap.parse_args()
 keys = a.keys.split(",")
-LABEL = {"s1": "spot +1m", "f1": "perp +1m", "s5": "spot +5m", "f5": "perp +5m", "s2": "spot +2m", "s3": "spot +3m",
+LABEL = {"s10s": "spot +10s", "f10s": "perp +10s", "s15s": "spot +15s", "f15s": "perp +15s", "s1": "spot +1m", "f1": "perp +1m", "s5": "spot +5m", "f5": "perp +5m", "s2": "spot +2m", "s3": "spot +3m",
          "s4": "spot +4m", "f2": "perp +2m", "f3": "perp +3m", "f4": "perp +4m"}
 
 ycols = ["ts", "sigma"] + [f"y_{v}{h}" for v in "sf" for h in range(1, 6)] + \
         [f"y_{v}{h}_d{d}" for v in "sf" for h in range(1, 6) for d in (1, 2, 5, 10, 30)]
 df = pd.read_parquet(FEAT / "panel.parquet", columns=ycols)
-df = df[df["ts"] >= "2025-05-03"].set_index("ts")
+df = df[df["ts"] >= "2025-05-03"].reset_index(drop=True)
+if (FEAT / "Ysub.parquet").exists():
+    df = pd.concat([df, pd.read_parquet(FEAT / "Ysub.parquet")], axis=1)
+df = df.set_index("ts")
 P = {}
 for k in keys:
     f = REPORTS / "preds" / (a.pattern.format(key=k) + ".parquet")
@@ -52,21 +55,25 @@ summary = {}
 delays = [0, 1, 2, 5, 10, 30]
 lat = {}
 for k, p in P.items():
-    v, h = k[0], int(k[1:])
+    v, h = k[0], k[1:]
     d = df.loc[p.index]
-    lat[k] = [E.metrics((d[f"y_{v}{h}"] if dl == 0 else d[f"y_{v}{h}_d{dl}"]).values, p.values)["ic"] for dl in delays]
-show = [k for k in ("s1", "f1", "s5") if k in lat]
+    dl_ok = [dl for dl in delays if dl == 0 or f"y_{v}{h}_d{dl}" in d]
+    lat[k] = [E.metrics((d[f"y_{v}{h}"] if dl == 0 else d[f"y_{v}{h}_d{dl}"]).values, p.values)["ic"] if dl in dl_ok else np.nan
+              for dl in delays]
+show = [k for k in keys if k in lat][:3]
 fig, ax = plt.subplots(figsize=(6.4, 3.6))
 for i, k in enumerate(show):
     ax.plot(delays, lat[k], marker="o", ms=5, color=SERIES[i], label=LABEL[k])
 ax.set_xscale("symlog", linthresh=1)
-ax.set_xticks(delays, [str(x) for x in delays])
+dmax = max(d for d in delays if any(np.isfinite(lat[k][delays.index(d)]) for k in show))
+ax.set_xticks([d for d in delays if d <= dmax], [str(d) for d in delays if d <= dmax])
 ax.set_xlabel("execution delay after bar close (seconds)")
 ax.set_ylabel("information coefficient")
-ax.set_title("The 1-minute edge decays within seconds")
+ax.set_title("Second-horizon forecasts: value vs delivery delay" if all(k.endswith("s") for k in show)
+             else "The 1-minute edge decays within seconds")
 ax.set_ylim(bottom=0)
 ax.legend(frameon=False, loc="upper right")
-ax.set_xlim(-0.2, 40)
+ax.set_xlim(-0.2, dmax * 1.3)
 fig.tight_layout()
 fig.savefig(REPORTS / f"latency_decay_{a.tag}.png", dpi=150)
 summary["latency_ic"] = {k: dict(zip(map(str, delays), np.round(v, 4))) for k, v in lat.items()}
@@ -76,7 +83,7 @@ fig, ax = plt.subplots(figsize=(6.4, 3.6))
 w = 0.26
 hits = {}
 for i, k in enumerate(show):
-    p = P[k]; v, h = k[0], int(k[1:])
+    p = P[k]; v, h = k[0], k[1:]
     y = df.loc[p.index, f"y_{v}{h}"].values
     m = np.isfinite(y) & (y != 0)
     dec = pd.qcut(np.abs(p.values[m]), 10, labels=False)
@@ -97,14 +104,14 @@ summary["hit_by_conf_decile"] = hits
 # ---------- monthly IC
 mon = {}
 for k, p in P.items():
-    v, h = k[0], int(k[1:])
+    v, h = k[0], k[1:]
     mon[k] = E.monthly_ic(pd.Series(p.index), df.loc[p.index, f"y_{v}{h}"].values, p.values).round(4)
 summary["monthly_ic"] = {k: v.to_dict() for k, v in mon.items()}
 
 # ---------- when is BTC predictable? (spot 1m and perp 5m)
 regimes = {}
-for k in [k for k in ("s1", "f1", "s5", "f5") if k in P]:
-    p = P[k]; v, h = k[0], int(k[1:])
+for k in [k for k in keys if k in P]:
+    p = P[k]; v, h = k[0], k[1:]
     d = pd.DataFrame({"p": p.values, "y": df.loc[p.index, f"y_{v}{h}"].values, "sig": df.loc[p.index, "sigma"].values}, index=p.index).dropna()
     hr = (d.index + pd.Timedelta(minutes=1)).hour
     sess = np.select([hr < 8, hr < 13, hr < 21], ["Asia 00-08", "Europe 08-13", "US 13-21"], "Late US 21-24")

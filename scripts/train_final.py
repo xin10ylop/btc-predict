@@ -54,6 +54,8 @@ VARIANTS = {
 
 df = pd.read_parquet(FEAT / "panel.parquet")
 df = df[df["ts"] >= "2025-05-03"].reset_index(drop=True)
+if (FEAT / "Ysub.parquet").exists():          # sub-minute targets (10s, 15s)
+    df = pd.concat([df, pd.read_parquet(FEAT / "Ysub.parquet")], axis=1)
 parts = [pd.read_parquet(FEAT / "X.parquet"), F.extra_features(df), pd.read_parquet(FEAT / "Xalt.parquet")]
 for f in [x for x in a.extra_x.split(",") if x]:
     parts.append(pd.read_parquet(FEAT / f))
@@ -92,11 +94,17 @@ for variant in a.variants.split(","):
     vm = meta.setdefault(variant, {"targets": {}})
     vm.update({"uses_futures": spec["uses_futures"], "half_life": a.half_life})
     for venue in [v for v in spec["venues"] if v in a.venues.split(",")]:
-        for h in [int(x) for x in a.horizons.split(",")]:
-            key = f"{venue}{h}"
+        for tok in a.horizons.split(","):
+            # minute horizons "1".."5" or second horizons "10s", "15s"
+            sub = tok.endswith("s")
+            hmin = int(tok[:-1]) / 60 if sub else int(tok)        # horizon in minutes
+            hlab = tok
+            h = 1 if sub else int(tok)                            # rows until the outcome is known / feature-set switch
+            key = f"{venue}{hlab}"
+            ycol = f"y_{venue}{hlab}"
             t0 = time.time()
-            scale = F.target_scale(df, h)
-            yz = df[f"y_{venue}{h}"] / scale
+            scale = F.target_scale(df, hmin)
+            yz = df[ycol] / scale
             if a.production_only:
                 entry = vm["targets"][key]
                 hc = {part: (cols[part] if h == 1 else cols[part + "_fast"]) for part in ("core", "sat")}
@@ -130,15 +138,15 @@ for variant in a.variants.split(","):
             res = {}
             for name, p in (("core", preds["core"]), ("sat", preds["sat"]), ("ens", ens_s)):
                 pp = p.where(pd.Series(m, index=df.index))
-                r = E.summarize(f"{variant}_{key}_{name}", df, pp, h, venue=venue, scale=scale)
-                r["monthly_ic"] = E.monthly_ic(df["ts"], df[f"y_{venue}{h}"].values, pp.values).round(4).to_dict()
+                r = E.summarize(f"{variant}_{key}_{name}", df, pp, hlab, venue=venue, scale=scale)
+                r["monthly_ic"] = E.monthly_ic(df["ts"], df[ycol].values, pp.values).round(4).to_dict()
                 res[name] = r
-            y = df[f"y_{venue}{h}"].values[m]
+            y = df[ycol].values[m]
             pu = C.causal_logistic(ens, y, horizon=h)
             res["ens_calibration"] = C.logloss(pu, y)
             res["ens_vs_core"] = E.paired_block_bootstrap(df["ts"][m], y, preds["core"].values[m], ens, n_boot=500)
             res["ens_vs_sat"] = E.paired_block_bootstrap(df["ts"][m], y, preds["sat"].values[m], ens, n_boot=500)
-            entry = {"venue": venue, "h": h, "files": {"core": f"{variant}_{key}_core.txt", "sat": f"{variant}_{key}_sat.txt"},
+            entry = {"venue": venue, "h": hmin, "label": hlab, "files": {"core": f"{variant}_{key}_core.txt", "sat": f"{variant}_{key}_sat.txt"},
                      **calib_artifacts(ens, y, scale.values[m]), "rls_state": rls.state(),
                      "holdout": {n: {k: v for k, v in r.items()} for n, r in res.items() if n in ("core", "sat", "ens")},
                      "holdout_logloss_skill_pct": res["ens_calibration"]["logloss_skill_pct"]}

@@ -195,6 +195,24 @@ and the parity test compares live-path output with the booster's output on the t
 (exact match, e.g. −0.21760 vs −0.21760). **Lesson: a backtest is not a deployment. Always run
 the real code path on real data before trusting it.**
 
+## 3f. Training/serving skew: what the live test exposed
+
+A backtest scores features computed from *final* historical data. A live system computes them
+seconds after the bar close, from data that may not be final yet. The live run therefore logged
+each feature vector at forecast time and compared it with the same minute recomputed minutes
+later from complete data (`scripts/live_skew_now.py`).
+
+| source of skew | symptom | fix | after the fix |
+|---|---|---|---|
+| **Coinbase revises recent candles.** One minute's volume read 18.5 BTC 76 s after the close and 26.3 BTC two minutes later. | The Coinbase-premium features (the #1 satellite feature) were wrong in 4 of 6 minutes; the 1-min model score moved by up to 1 score-SD. | Rebuild the last 15 minutes from raw trades (verified identical to final candles); use candles only once ≥ 15 min old. | 0 of 2,600 minutes mismatch |
+| **Coinbase trade publication lag** (0.8–2 s) | Occasional last-minute close mismatch | Completeness barrier: the minute counts as closed once a trade stamped ≥ T is visible | — |
+| **Binance 1 s klines are not final at T+0.5–1.0 s** | ETH and alt-coin seconds sometimes missing or changed | Fetch at T+2.0 s; data were final from T+1.5 s in every trial | Binance-side features identical; 4 of 5 minutes give bit-identical scores |
+
+The first live run (13:51–14:33 UTC, 1-minute hit rate weak) used the skewed path, and its log is
+kept as `logs/predictions_run1_coinbase_skew.jsonl`. **Lesson: parity on historical data is
+necessary but not sufficient. Also check live-at-forecast-time against final data, because
+exchanges revise and publish late.**
+
 ## 4. Overfitting safeguards actually used
 
 1. A 6-month **holdout** (2026-05 → 2026-10) that no design decision looked at.

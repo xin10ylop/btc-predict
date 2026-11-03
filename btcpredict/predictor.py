@@ -100,7 +100,9 @@ class Predictor:
                 else:
                     dec = m.get("hit_by_conf_decile") or [np.nan] * 10
                     hh = dec[min(int(conf[i] // 10), len(dec) - 1)]
-                rows.append({"target": key, "venue": m["venue"], "h": h, "z": z[i], "z_core": zc[i], "z_sat": zs[i],
+                label = m.get("label") or (f"{round(h * 60)}s" if h < 1 else f"{int(h)}m")
+                label = label if label.endswith(("s", "m")) else f"{label}m"
+                rows.append({"target": key, "venue": m["venue"], "h": h, "label": label, "z": z[i], "z_core": zc[i], "z_sat": zs[i],
                              "p_up": p_up[i], "exp_ret_bp": 1e4 * exp_ret[i],
                              "lo80_bp": 1e4 * (exp_ret[i] + q["0.1"] * scale[i]), "hi80_bp": 1e4 * (exp_ret[i] + q["0.9"] * scale[i]),
                              "lo95_bp": 1e4 * (exp_ret[i] + q["0.025"] * scale[i]), "hi95_bp": 1e4 * (exp_ret[i] + q["0.975"] * scale[i]),

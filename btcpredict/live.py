@@ -208,33 +208,70 @@ class RestSource:
         from .download import trades_to_1s
         return trades_to_1s(t, p, q, m, n)
 
-    def coinbase_minutes(self, t0_ms, n_min):
-        """Coinbase BTC-USD 1m candles; the newest minute is rebuilt from trades (candles can lag)."""
-        url = "https://api.exchange.coinbase.com/products/BTC-USD"
-        rows, t = [], pd.Timestamp(t0_ms, unit="ms")
-        stop = t + pd.Timedelta(minutes=n_min)
-        while t < stop:
-            t2 = min(t + pd.Timedelta(minutes=300), stop)
-            r = self.s.get(url + "/candles", params={"granularity": 60, "start": t.isoformat(),
-                                                     "end": (t2 - pd.Timedelta(seconds=1)).isoformat()}, timeout=self.timeout)
+    CB_URL = "https://api.exchange.coinbase.com/products/BTC-USD"
+    CB_FRESH_MIN = 15      # recent candles are revised after the fact -> rebuild these minutes from trades
+
+    def coinbase_candles(self, t0: pd.Timestamp, t1: pd.Timestamp) -> pd.DataFrame:
+        rows, t = [], t0
+        while t < t1:
+            t2 = min(t + pd.Timedelta(minutes=300), t1)
+            r = self.s.get(self.CB_URL + "/candles", params={"granularity": 60, "start": t.isoformat(),
+                                                             "end": (t2 - pd.Timedelta(seconds=1)).isoformat()}, timeout=self.timeout)
             if r.status_code == 200:
                 rows += r.json()
             t = t2
         df = pd.DataFrame(rows, columns=["time", "low", "high", "open", "close", "volume"]).drop_duplicates("time")
         df["ts"] = pd.to_datetime(df["time"], unit="s")
-        last = stop - pd.Timedelta(minutes=1)
-        try:
-            tr = self.s.get(url + "/trades", params={"limit": 1000}, timeout=self.timeout).json()
-            tt = pd.DataFrame(tr)
-            tt["t"] = pd.to_datetime(tt["time"]).dt.tz_localize(None)
-            tt = tt[(tt["t"] >= last) & (tt["t"] < stop)].sort_values("t")
-            if len(tt):
-                df = df[df["ts"] != last]
-                df = pd.concat([df, pd.DataFrame({"ts": [last], "close": [float(tt["price"].iloc[-1])],
-                                                  "volume": [tt["size"].astype(float).sum()]})], ignore_index=True)
-        except Exception:  # noqa: BLE001
-            pass
-        return df.sort_values("ts").reset_index(drop=True)[["ts", "close", "volume"]]
+        return df[(df["ts"] >= t0) & (df["ts"] < t1)][["ts", "close", "volume"]].sort_values("ts").reset_index(drop=True)
+
+    def coinbase_trades(self, min_time: pd.Timestamp, stop_id: int | None = None) -> pd.DataFrame:
+        """Trades newer than min_time (and newer than stop_id), paging back with the CB-AFTER cursor."""
+        out, after = [], None
+        for _ in range(60):
+            params = {"limit": 1000} if after is None else {"limit": 1000, "after": after}
+            r = self.s.get(self.CB_URL + "/trades", params=params, timeout=self.timeout)
+            r.raise_for_status()
+            page = r.json()
+            if not page:
+                break
+            out += page
+            after = r.headers.get("CB-AFTER") or page[-1]["trade_id"]
+            oldest = pd.Timestamp(page[-1]["time"]).tz_localize(None) if pd.Timestamp(page[-1]["time"]).tzinfo is None \
+                else pd.Timestamp(page[-1]["time"]).tz_convert(None)
+            if oldest < min_time or (stop_id is not None and page[-1]["trade_id"] <= stop_id):
+                break
+        if not out:
+            return pd.DataFrame(columns=["trade_id", "t", "price", "size"])
+        tt = pd.DataFrame(out)
+        tt["t"] = pd.to_datetime(tt["time"], utc=True).dt.tz_localize(None)
+        tt = tt.astype({"price": float, "size": float})[["trade_id", "t", "price", "size"]]
+        if stop_id is not None:
+            tt = tt[tt["trade_id"] > stop_id]
+        return tt[tt["t"] >= min_time].drop_duplicates("trade_id").sort_values("trade_id").reset_index(drop=True)
+
+    @staticmethod
+    def trades_to_minutes(tt: pd.DataFrame, t0: pd.Timestamp, t1: pd.Timestamp) -> pd.DataFrame:
+        tt = tt[(tt["t"] >= t0) & (tt["t"] < t1)].sort_values("trade_id")
+        g = tt.groupby(tt["t"].dt.floor("min"))
+        m = pd.DataFrame({"close": g["price"].last(), "volume": g["size"].sum()})
+        m.index.name = "ts"
+        return m.reset_index()
+
+    def coinbase_minutes(self, t0_ms, n_min):
+        """Coinbase BTC-USD minutes: final candles for older minutes, the last CB_FRESH_MIN minutes
+        rebuilt from raw trades (identical to the final candles once complete; verified)."""
+        t0 = pd.Timestamp(t0_ms, unit="ms")
+        stop = t0 + pd.Timedelta(minutes=n_min)
+        cut = max(t0, stop - pd.Timedelta(minutes=self.CB_FRESH_MIN))
+        old = self.coinbase_candles(t0, cut)
+        tt = self.coinbase_trades(cut)
+        for _ in range(8):                      # completeness barrier (see CachedSource._coinbase)
+            if len(tt) and tt["t"].max() >= stop:
+                break
+            time.sleep(0.25)
+            tt = self.coinbase_trades(cut)
+        recent = self.trades_to_minutes(tt, cut, stop)
+        return pd.concat([old, recent], ignore_index=True).sort_values("ts").reset_index(drop=True)
 
     def premium(self, t0_ms, n_min):
         rows = self._klines(FUT_API, "/fapi/v1/premiumIndexKlines", "BTCUSDT", "1m", t0_ms, t0_ms + n_min * 60000, 1500)
@@ -442,17 +479,33 @@ class CachedSource:
         return out
 
     def _coinbase(self, t0_ms, n_min):
-        key = ("cb",)
-        c = self.cache.get(key)
-        if c is not None:
-            df = c
-            t_last = df["ts"].max()
-            start = int((t_last - pd.Timedelta(minutes=2)).value // 10**6)
-            new = self.src.coinbase_minutes(start, int((t0_ms + n_min * 60000 - start) // 60000))
-            df = pd.concat([df[df["ts"] < pd.Timestamp(start, unit="ms")], new]).drop_duplicates("ts", keep="last")
-        else:
-            df = self.src.coinbase_minutes(t0_ms, n_min)
+        """Candles are fetched only once they are >= CB_FRESH_MIN minutes old (final); the recent
+        minutes come from an incrementally maintained cache of raw trades."""
+        R = self.src
         t0 = pd.Timestamp(t0_ms, unit="ms")
-        df = df[df["ts"] >= t0].sort_values("ts").reset_index(drop=True)
-        self.cache[key] = df
-        return df
+        stop = t0 + pd.Timedelta(minutes=n_min)
+        cut = stop - pd.Timedelta(minutes=R.CB_FRESH_MIN)
+        cand = self.cache.get("cb_candles")
+        final_until = self.cache.get("cb_final_until")
+        if cand is None or final_until is None or final_until < t0:
+            cand = R.coinbase_candles(t0, cut)
+        elif cut > final_until:
+            cand = pd.concat([cand, R.coinbase_candles(final_until, cut)], ignore_index=True)
+        cand = cand[(cand["ts"] >= t0) & (cand["ts"] < cut)].drop_duplicates("ts", keep="last")
+        self.cache["cb_candles"], self.cache["cb_final_until"] = cand, cut
+        tr = self.cache.get("cb_trades")
+        if tr is None or len(tr) == 0 or tr["t"].min() > cut:
+            tr = R.coinbase_trades(cut)
+        else:
+            tr = pd.concat([tr, R.coinbase_trades(cut, stop_id=int(tr["trade_id"].max()))], ignore_index=True)
+        tr = tr[tr["t"] >= cut - pd.Timedelta(minutes=2)].drop_duplicates("trade_id")
+        # completeness barrier: the last minute is closed only once a trade stamped >= stop is visible
+        for _ in range(8):
+            if len(tr) and tr["t"].max() >= stop:
+                break
+            time.sleep(0.25)
+            new = R.coinbase_trades(cut, stop_id=int(tr["trade_id"].max()) if len(tr) else None)
+            tr = pd.concat([tr, new], ignore_index=True).drop_duplicates("trade_id")
+        self.cache["cb_trades"] = tr
+        recent = R.trades_to_minutes(tr, cut, stop)
+        return pd.concat([cand, recent], ignore_index=True).sort_values("ts").reset_index(drop=True)

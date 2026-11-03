@@ -1,7 +1,7 @@
 # btc-predict — 1-to-5-minute Bitcoin forecaster
 
-Every minute, this forecasts how BTC will move over the **next 1, 2, 3, 4 and 5 minutes**. It
-covers both Binance spot (BTC/USDT) and the USD-M perpetual. Each forecast includes:
+Every minute, this forecasts how BTC will move over the **next 10 seconds, 15 seconds, and 1, 2,
+3, 4 and 5 minutes**. It covers both Binance spot (BTC/USDT) and the USD-M perpetual. Each forecast includes:
 * a calibrated **P(up)**
 * an expected move
 * 80% and 95% bands
@@ -39,27 +39,35 @@ reachable.
 * **top-k% conf.**: hit rate on the k% of minutes where the model was most confident.
 * **log-loss skill**: P(up) improvement over a constant 50/50 forecast.
 * **hit @ +2s / +5s**: the forecast starts from the price 2 or 5 seconds after the bar close, i.e.
-  what a slower client actually gets. The live CLI delivers forecasts about 2.2 s after the close.
+  what a slower client actually gets. The live CLI delivers forecasts about **3.2 s** after the
+  close: it waits 2.0 s until exchange data are final (see *Training/serving skew* below), then
+  computes for about 1.2 s.
 
 | model | target | hit rate | AUC | IC | top-10% conf. hit | top-1% conf. hit | log-loss skill | hit @ +2s | hit @ +5s | IC core → ens |
 |---|---|---|---|---|---|---|---|---|---|---|
+| full | spot +10s | **62.4%** | 0.670 | 0.193 | 77.4% | 81.7% | 6.55% | 58.4% | 55.6% | 0.179 → 0.193 |
+| full | spot +15s | **61.3%** | 0.656 | 0.172 | 76.1% | 82.8% | 5.51% | 58.0% | 55.6% | 0.158 → 0.172 |
 | full | spot +1m | **56.9%** | 0.597 | 0.102 | 67.4% | 73.9% | 2.14% | 55.3% | 54.1% | 0.094 → 0.102 |
 | full | spot +2m | **55.0%** | 0.570 | 0.073 | 62.6% | 68.6% | 1.10% | 53.9% | 53.0% | 0.068 → 0.073 |
 | full | spot +3m | **54.1%** | 0.557 | 0.060 | 60.6% | 66.3% | 0.74% | 53.2% | 52.6% | 0.056 → 0.060 |
 | full | spot +4m | **53.6%** | 0.552 | 0.053 | 59.3% | 64.7% | 0.60% | 52.9% | 52.4% | 0.049 → 0.053 |
 | full | spot +5m | **53.4%** | 0.547 | 0.048 | 58.8% | 64.4% | 0.50% | 52.7% | 52.3% | 0.043 → 0.048 |
+| full | perp +10s | **58.1%** | 0.613 | 0.126 | 70.3% | 76.2% | 2.88% | 54.9% | 53.0% | 0.102 → 0.126 |
+| full | perp +15s | **57.1%** | 0.600 | 0.110 | 68.4% | 73.9% | 2.26% | 54.5% | 52.9% | 0.089 → 0.110 |
 | full | perp +1m | **54.4%** | 0.561 | 0.063 | 61.0% | 67.6% | 0.86% | 53.0% | 52.4% | 0.052 → 0.063 |
 | full | perp +2m | **53.1%** | 0.544 | 0.042 | 58.0% | 61.2% | 0.43% | 52.2% | 51.8% | 0.034 → 0.042 |
 | full | perp +3m | **52.7%** | 0.538 | 0.035 | 56.9% | 60.8% | 0.33% | 52.1% | 51.8% | 0.028 → 0.035 |
 | full | perp +4m | **52.6%** | 0.536 | 0.031 | 56.6% | 60.1% | 0.30% | 52.0% | 51.8% | 0.025 → 0.031 |
 | full | perp +5m | **52.3%** | 0.534 | 0.030 | 57.3% | 60.7% | 0.28% | 51.9% | 51.7% | 0.024 → 0.030 |
+| spot | spot +10s | **61.3%** | 0.658 | 0.180 | 76.4% | 81.7% | 5.70% | 58.0% | 55.4% | 0.148 → 0.180 |
+| spot | spot +15s | **60.4%** | 0.646 | 0.161 | 74.9% | 81.5% | 4.84% | 57.6% | 55.3% | 0.131 → 0.161 |
 | spot | spot +1m | **56.5%** | 0.593 | 0.097 | 66.8% | 73.9% | 1.95% | 55.2% | 54.0% | 0.079 → 0.097 |
 | spot | spot +2m | **54.9%** | 0.568 | 0.070 | 62.3% | 67.9% | 1.02% | 53.8% | 53.0% | 0.056 → 0.070 |
 | spot | spot +3m | **54.0%** | 0.556 | 0.059 | 60.2% | 64.6% | 0.70% | 53.1% | 52.6% | 0.047 → 0.059 |
 | spot | spot +4m | **53.6%** | 0.550 | 0.052 | 59.4% | 63.0% | 0.57% | 52.9% | 52.4% | 0.042 → 0.052 |
 | spot | spot +5m | **53.3%** | 0.547 | 0.048 | 58.7% | 63.6% | 0.50% | 52.7% | 52.4% | 0.037 → 0.048 |
 
-**Stability.** All **90 of 90** (target × month) holdout ICs are positive. The full-model
+**Stability.** All **126 of 126** (target × month) holdout ICs are positive. The full-model
 monthly IC ranges are:
 * spot +1m: 0.079 – 0.126
 * perp +1m: 0.045 – 0.077
@@ -77,6 +85,23 @@ never-tuned confirmation months (Dec 2025, Feb 2026, Apr 2026), the same archite
 | spot +5m | 0.032 | 52.8% |
 
 Treat these as the **conservative** numbers and the holdout as the calm-market numbers.
+
+### The 10- and 15-second horizons
+
+These horizons are the most predictable, and for a mechanical reason: this is exactly the window
+in which Binance spot finishes catching up with the perpetual, Coinbase and the ETH perp.
+* **At the bar close:** spot +10s hits 62.4% overall and 77% on its 10% most confident calls.
+* **After delivery delay:** the edge belongs to whoever acts first. With the live CLI's ~3 s
+  delivery, expect a hit rate of about 56–58% and an IC of about 0.09 for spot +10s; see the
+  "+2s/+5s" columns.
+* **In basis points:** the moves are small. The average |move| in a 10-second window is ~1.2 bp,
+  and the gross edge is 0.78 bp in the top-confidence decile (0.45 bp at +2s).
+* **What it's good for:** execution timing — when to send an order in the next few seconds — and
+  short-horizon probability products. It is not a fee-paying taker strategy.
+* **Faster delivery:** a websocket client co-located with the exchanges would keep far more of
+  the edge than this REST-polling CLI.
+
+![latency seconds](reports/latency_decay_holdout_sub.png)
 
 ![latency](reports/latency_decay_holdout.png)
 
@@ -161,6 +186,23 @@ regimes flip, and arbitrage capital comes and goes. Each defense below was teste
 
 Known weak spot: in multi-day storms, the spot +1m top-confidence decile is overconfident by
 ~6 percentage points. Every forecast prints the current regime so you can discount it.
+
+## Training/serving skew: the live test's biggest lesson
+
+A backtest scores features computed from *final* historical data. A live system computes them
+seconds after the bar close. Live forecasts were therefore logged and compared with the same
+minutes recomputed later from complete data. That comparison exposed two real problems:
+* **Coinbase revises recent candles.** One minute's volume changed from 18.5 to 26.3 BTC about
+  two minutes after it closed.
+* **Binance 1-second klines are not always final at T+1 s.**
+
+Both distorted the top features. The fixes:
+* rebuild recent Coinbase minutes from raw trades, behind a completeness barrier;
+* fetch at T+2.0 s.
+
+After the fixes, **29 of 30 live model scores are bit-identical** to scores recomputed from
+final data. Details are in [FINDINGS §3f](docs/FINDINGS.md). The live CLI logs every feature
+vector, and `scripts/check_live_skew.py` re-verifies them against the official daily files.
 
 ## How it works
 
@@ -263,7 +305,7 @@ python scripts/build_features.py
 python scripts/train_final.py --variants full,spot
 ```
 
-4. Run live. Each forecast is computed about 2 seconds after the bar close.
+4. Run live. Each forecast is delivered about 3 seconds after the bar close.
 
 ```bash
 python -m btcpredict.run_live --variant full

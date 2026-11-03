@@ -17,8 +17,12 @@ from btcpredict.config import FEAT, REPORTS  # noqa: E402
 keys = (sys.argv[1] if len(sys.argv) > 1 else "s1,f1,s5,f5").split(",")
 pattern = sys.argv[2] if len(sys.argv) > 2 else "final_full_{key}_holdout"
 cols = ["ts"] + [f"y_{k}" for k in keys] + [f"y_{k}_d{d}" for k in keys for d in (2, 5)]
-df = pd.read_parquet(FEAT / "panel.parquet", columns=cols)
-df = df[df["ts"] >= "2025-05-03"].set_index("ts")
+pcols = [c for c in cols if not any(c.startswith(f"y_{k}") for k in keys if k.endswith("s"))]
+df = pd.read_parquet(FEAT / "panel.parquet", columns=pcols)
+df = df[df["ts"] >= "2025-05-03"].reset_index(drop=True)
+if any(k.endswith("s") for k in keys):
+    df = pd.concat([df, pd.read_parquet(FEAT / "Ysub.parquet")], axis=1)
+df = df.set_index("ts")
 out = {}
 for k in keys:
     p = pd.read_parquet(REPORTS / "preds" / (pattern.format(key=k) + ".parquet")).set_index("ts")["pred"]

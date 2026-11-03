@@ -12,8 +12,10 @@ for f in sorted(REPORTS.glob(f"{kind}_*_*.json")):
     variant, key = f.stem.split("_")[1], f.stem.split("_")[2]
     r = json.loads(f.read_text())
     e = r["ens"]
-    name = ("spot" if key[0] == "s" else "perp") + f" +{key[1:]}m"
-    rows.append((variant, int(key[1:]), key[0], name, e, r))
+    hz = key[1:]
+    order = int(hz[:-1]) / 60 if hz.endswith("s") else int(hz)
+    name = ("spot" if key[0] == "s" else "perp") + (f" +{hz}" if hz.endswith("s") else f" +{hz}m")
+    rows.append((variant, order, key[0], name, e, r))
 rows.sort(key=lambda x: (x[0] != "full", x[2] != "s", x[1]))
 print("| model | target | hit rate | AUC | IC | top-10% conf. hit | top-1% conf. hit | log-loss skill | hit @ +2s | hit @ +5s | IC core → ens |")
 print("|---|---|---|---|---|---|---|---|---|---|---|")
