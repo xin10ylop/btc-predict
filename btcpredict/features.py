@@ -77,6 +77,55 @@ def model_matrix(df: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
+def extra_features(df: pd.DataFrame) -> pd.DataFrame:
+    """v2 additions motivated by the literature survey:
+    * sign-based reversal kernels  sum_j j^-a * tanh(l * r_{t-j}/sigma)   (Kitron & Wengrowicz 2026)
+    * reversal conditioned on whether the last bar was flow-driven
+    * quarter-hour clock interactions (quarter-hour effect, 2026)
+    """
+    out = {}
+    sig = df["sigma"].astype(float)
+    for tag, col in (("s", "s_close"), ("f", "f_close")):
+        r = df[col].diff() / (sig + EPS)
+        th = np.tanh(1.0 * r)
+        for a in (0.5, 1.0):
+            acc = 0
+            for j in range(1, 13):
+                acc = acc + j ** (-a) * th.shift(j - 1)
+            out[f"{tag}_revk{a}"] = acc
+        # 5-minute bar version
+        r5 = df[col].diff(5) / (sig * np.sqrt(5) + EPS)
+        acc = 0
+        for j in range(1, 7):
+            acc = acc + j ** (-0.5) * np.tanh(r5.shift(5 * (j - 1)))
+        out[f"{tag}_revk5m"] = acc
+        imb = df[f"{tag}_flow60"] / (df[f"{tag}_vol60"] + EPS)
+        driven = (np.sign(r) == np.sign(imb)).astype(float)
+        out[f"{tag}_R1_driven"] = r * driven
+        out[f"{tag}_R1_opposed"] = r * (1 - driven)
+        r3 = df[col].diff(3) / (sig * np.sqrt(3) + EPS)
+        imb3 = df[f"{tag}_flow60"].rolling(3).sum() / (df[f"{tag}_vol60"].rolling(3).sum() + EPS)
+        out[f"{tag}_R3_x_imb3"] = r3 * imb3
+    ts_fc = pd.DatetimeIndex(df["ts"]) + pd.Timedelta(minutes=1)
+    qh = (ts_fc.minute % 15 == 0).astype(float)
+    hr = (ts_fc.minute == 0).astype(float)
+    r1 = df["s_close"].diff() / (sig + EPS)
+    r5 = df["s_close"].diff(5) / (sig * np.sqrt(5) + EPS)
+    out["qh_next"] = qh
+    out["qh_x_R1"] = qh * r1
+    out["qh_x_R5"] = qh * r5
+    out["hr_x_R5"] = hr * r5
+    # just after a quarter hour (minutes 1..3 into it)
+    m15 = ts_fc.minute % 15
+    out["qh_after"] = np.where(m15 <= 3, m15, -1).astype(float)
+    m15 = np.asarray(m15)
+    qa = np.zeros(len(df))
+    for k in (1, 2, 3):
+        qa = np.where(m15 == k, (df["s_close"].diff(k) / (sig * np.sqrt(k) + EPS)).values, qa)
+    out["qh_after_x_R"] = qa
+    return pd.DataFrame(out, index=df.index).astype("float32").replace([np.inf, -np.inf], np.nan)
+
+
 def target(df: pd.DataFrame, h: int, venue: str = "s", delay: int | None = None) -> pd.Series:
     col = f"y_{venue}{h}" if delay is None else f"y_{venue}{h}_d{delay}"
     return df[col]

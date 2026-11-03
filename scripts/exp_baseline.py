@@ -17,15 +17,17 @@ from btcpredict.config import FEAT, REPORTS  # noqa: E402
 t0 = time.time()
 df = pd.read_parquet(FEAT / "panel.parquet")
 df = df[df["ts"] >= "2025-05-03"].reset_index(drop=True)
-X = F.model_matrix(df)
+X = pd.read_parquet(FEAT / "X.parquet")
+assert len(X) == len(df)
 print("matrix", X.shape, f"{time.time()-t0:.0f}s", flush=True)
 months = sys.argv[1].split(",") if len(sys.argv) > 1 else E.DEV_MONTHS
 horizons = [int(h) for h in sys.argv[2].split(",")] if len(sys.argv) > 2 else [1, 5]
+venue = sys.argv[3] if len(sys.argv) > 3 else "s"
 
 rows = []
 for h in horizons:
     scale = F.target_scale(df, h)
-    yz = df[f"y_s{h}"] / scale
+    yz = df[f"y_{venue}{h}"] / scale
     folds = E.make_folds(df["ts"], months, purge_minutes=h + 10)
     cands = {
         "basis_dev60z": M.single_feature("basis_dev60z"),
@@ -35,12 +37,12 @@ for h in horizons:
     for name, fp in cands.items():
         t = time.time()
         p = E.walk_forward(fp, X, yz, folds, verbose=False)
-        r = E.summarize(name, df, p, h, scale=scale)
+        r = E.summarize(name, df, p, h, venue=venue, scale=scale)
         r["secs"] = round(time.time() - t)
         rows.append(r)
         print(json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()}), flush=True)
-        print("   monthly IC:", E.monthly_ic(df["ts"], df[f"y_s{h}"].values, p.values).round(3).to_dict(), flush=True)
+        print("   monthly IC:", E.monthly_ic(df["ts"], df[f"y_{venue}{h}"].values, p.values).round(3).to_dict(), flush=True)
         if name == "lgbm":
             imp = pd.Series(fp.last_model.feature_importance("gain"), index=fp.last_features).sort_values(ascending=False)
             print("   top features:", (imp / imp.sum()).head(25).round(3).to_dict(), flush=True)
-pd.DataFrame(rows).to_csv(REPORTS / "exp_baseline.csv", index=False)
+pd.DataFrame(rows).to_csv(REPORTS / f"exp_baseline_{venue}.csv", index=False)

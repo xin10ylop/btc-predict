@@ -32,9 +32,24 @@ def _cat(venue: str, days: list[dt.date], cols: list[str]) -> dict[str, np.ndarr
     return {c: np.concatenate(v) for c, v in parts.items()}
 
 
-def build(start: str, end: str, out_name: str = "seq") -> None:
+def build(start: str, end: str, out_name: str = "seq", chunk_days: int = 20, warm_days: int = 1) -> None:
+    """Memory-light: processes `chunk_days` at a time (+ warm-up days for rolling statistics) and
+    writes into a memory-mapped .npy file."""
     s, e = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
     days = [s + dt.timedelta(days=i) for i in range((e - s).days + 1)]
+    out = np.lib.format.open_memmap(FEAT / f"{out_name}_X.npy", mode="w+", dtype=np.float32,
+                                    shape=(len(days) * 86400, len(CHANNELS)))
+    for i in range(0, len(days), chunk_days):
+        lo = max(0, i - warm_days)
+        block = _channels(days[lo:i + chunk_days])
+        skip = (i - lo) * 86400
+        out[i * 86400: i * 86400 + len(block) - skip] = block[skip:]
+        print("chunk", days[i], flush=True)
+    out.flush()
+    pd.Series([str(pd.Timestamp(s))]).to_csv(FEAT / f"{out_name}_t0.csv", index=False)
+
+
+def _channels(days: list[dt.date]) -> np.ndarray:
     S = _cat("spot", days, ["c", "v", "bv"])
     Fu = _cat("um", days, ["c", "v", "bv", "lbv", "lsv"])
     Et = _cat("eth", days, ["c"])
@@ -55,10 +70,7 @@ def build(start: str, end: str, out_name: str = "seq") -> None:
         np.log1p(Fu["v"] / vf), (Fu["lbv"] - Fu["lsv"]) / vf,
         re / sig, np.log1p(S["v"] / vs),
     ], axis=1).astype(np.float32)
-    ch = np.clip(np.nan_to_num(ch, nan=0.0, posinf=0.0, neginf=0.0), -20, 20)
-    t0 = pd.Timestamp(s)
-    np.save(FEAT / f"{out_name}_X.npy", ch)
-    pd.Series([str(t0)]).to_csv(FEAT / f"{out_name}_t0.csv", index=False)
+    return np.clip(np.nan_to_num(ch, nan=0.0, posinf=0.0, neginf=0.0), -20, 20)
 
 
 def load(out_name: str = "seq"):
