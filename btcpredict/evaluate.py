@@ -28,13 +28,16 @@ class Fold:
 
 
 def make_folds(ts: pd.Series, months: list[str], purge_minutes: int = 15, min_train_days: int = 60,
-               train_days: int | None = None, valid: np.ndarray | None = None) -> list[Fold]:
+               train_days: int | None = None, valid: np.ndarray | None = None, block: int = 1) -> list[Fold]:
+    """One fold per `block` consecutive test months; training ends `purge_minutes` before the block."""
     ts = pd.DatetimeIndex(ts)
     valid = np.ones(len(ts), bool) if valid is None else valid
     out = []
-    for m in months:
-        start = pd.Timestamp(m + "-01")
-        end = start + pd.offsets.MonthBegin(1)
+    groups = [months[i:i + block] for i in range(0, len(months), block)]
+    for g in groups:
+        m = g[0]
+        start = pd.Timestamp(g[0] + "-01")
+        end = pd.Timestamp(g[-1] + "-01") + pd.offsets.MonthBegin(1)
         te = np.where((ts >= start) & (ts < end) & valid)[0]
         cut = start - pd.Timedelta(minutes=purge_minutes)
         lo = ts[0] if train_days is None else cut - pd.Timedelta(days=train_days)

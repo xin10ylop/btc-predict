@@ -38,8 +38,9 @@ ap.add_argument("--rounds", type=int, default=400)
 ap.add_argument("--params", default="{}")
 ap.add_argument("--months", default="holdout")
 ap.add_argument("--half_life", type=float, default=2880)
+ap.add_argument("--block", type=int, default=2, help="test months per retrain")
 ap.add_argument("--skip_final", action="store_true")
-ap.add_argument("--extra_x", default="", help="comma list of extra feature parquet files in data/features")
+ap.add_argument("--extra_x", default="Xcb.parquet,Xalt2.parquet", help="comma list of extra feature parquet files in data/features")
 a = ap.parse_args()
 
 VARIANTS = {
@@ -55,7 +56,7 @@ for f in [x for x in a.extra_x.split(",") if x]:
 X = pd.concat(parts, axis=1)
 months = E.HOLDOUT_MONTHS if a.months == "holdout" else a.months.split(",")
 PRED = REPORTS / "preds"
-meta_path = MODELS / "meta.json"
+meta_path = MODELS / "meta.json" if a.months == "holdout" else REPORTS / f"meta_{a.months.replace(',', '-')}.json"
 meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
 params = json.loads(a.params)
 mtag = a.months.replace(",", "-")
@@ -80,7 +81,10 @@ def calib_artifacts(z, y, scale):
 
 for variant in a.variants.split(","):
     spec = VARIANTS[variant]
-    cols = {part: [c for c in open(spec[part]).read().split() if c in X.columns] for part in ("core", "sat")}
+    cols = {}
+    for part in ("core", "sat"):
+        cols[part] = [c for c in open(spec[part]).read().split() if c in X.columns]
+        cols[part + "_fast"] = [c for c in open(spec[part].replace(".txt", "_fast.txt")).read().split() if c in X.columns]
     vm = meta.setdefault(variant, {"targets": {}})
     vm.update({"uses_futures": spec["uses_futures"], "half_life": a.half_life})
     for venue in [v for v in spec["venues"] if v in a.venues.split(",")]:
@@ -89,11 +93,12 @@ for variant in a.variants.split(","):
             t0 = time.time()
             scale = F.target_scale(df, h)
             yz = df[f"y_{venue}{h}"] / scale
-            folds = E.make_folds(df["ts"], months, purge_minutes=h + 10)
+            folds = E.make_folds(df["ts"], months, purge_minutes=h + 10, block=a.block)
             preds, fps = {}, {}
+            hc = {part: (cols[part] if h == 1 else cols[part + "_fast"]) for part in ("core", "sat")}
             for part in ("core", "sat"):
                 fps[part] = M.lgbm_factory(params=params, rounds=a.rounds)
-                preds[part] = E.walk_forward(fps[part], X[cols[part]], yz, folds, verbose=False)
+                preds[part] = E.walk_forward(fps[part], X[hc[part]], yz, folds, verbose=False)
             m = preds["core"].notna().values & preds["sat"].notna().values
             Z = np.column_stack([np.ones(m.sum()), preds["core"].values[m], preds["sat"].values[m]])
             ens, rls = online.rls_stack(Z, yz.values[m], horizon=h, half_life=a.half_life, ridge=1e4,
@@ -119,11 +124,11 @@ for variant in a.variants.split(","):
             if not a.skip_final:
                 tr = np.where(np.isfinite(yz.values))[0]
                 for part in ("core", "sat"):
-                    fps[part](X[cols[part]].iloc[tr], yz.iloc[tr], X[cols[part]].iloc[-5:], None)
+                    fps[part](X[hc[part]].iloc[tr], yz.iloc[tr], X[hc[part]].iloc[-5:], None)
                     fps[part].last_model.save_model(str(MODELS / entry["files"][part]))
             vm["targets"][key] = entry
             meta_path.write_text(json.dumps(meta, indent=1, default=float))
-            (REPORTS / f"holdout_{variant}_{key}.json").write_text(json.dumps(res, indent=1, default=float))
+            (REPORTS / f"{'holdout' if a.months == 'holdout' else 'confirm'}_{variant}_{key}.json").write_text(json.dumps(res, indent=1, default=float))
             for name in ("core", "sat", "ens"):
                 r = res[name]
                 print(f"{variant} {key} {name:4s} ic={r['ic']:.4f} hit={r['hit']:.4f} auc={r['auc']:.4f} top10={r['hit_top10']:.4f} "

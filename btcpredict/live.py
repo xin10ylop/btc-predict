@@ -262,6 +262,8 @@ def build_features(src, T: pd.Timestamp, use_futures: bool = True, last_n: int =
     h0_ms = T_ms - HIST_MIN * 60000
     nS = HIST_MIN * 60
     s0_ms = T_ms - SEC_WIN * 1000
+    if isinstance(src, CachedSource):
+        _prefetch(src, h0_ms, nS, s0_ms, use_futures)
     # spot BTC: per-second for the whole history (exact realized variance per minute)
     S = src.spot_seconds("btc", h0_ms, nS)
     # perp: minute bars for history + real per-second bars for the recent window
@@ -336,6 +338,25 @@ def build_features(src, T: pd.Timestamp, use_futures: bool = True, last_n: int =
     return df.reset_index(drop=True), A
 
 
+def _prefetch(src, h0_ms, nS, s0_ms, use_futures):
+    """Issue all network requests of one step concurrently; build_features then hits the cache."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    calls = [lambda: src.spot_seconds("btc", h0_ms, nS), lambda: src.minutes("eth", h0_ms, HIST_MIN),
+             lambda: src.spot_seconds("eth", s0_ms, SEC_WIN), lambda: src.coinbase_minutes(h0_ms, HIST_MIN)]
+    calls += [(lambda a=a: src.spot_seconds(a, s0_ms, SEC_WIN))
+              for a in altfeat.ALTS + altfeat.BOOKS + altfeat.ALTS2 if a != "eth"]
+    if use_futures:
+        calls += [lambda: src.minutes("um", h0_ms, HIST_MIN), lambda: src.fut_seconds(s0_ms, SEC_WIN),
+                  lambda: src.fut_seconds(s0_ms, SEC_WIN, "ETHUSDT"), lambda: src.premium(h0_ms - 60000 * 600, HIST_MIN + 600)]
+    with ThreadPoolExecutor(12) as ex:
+        for f in [ex.submit(c) for c in calls]:
+            try:
+                f.result()
+            except Exception:  # noqa: BLE001 - surfaced again by the sequential call
+                pass
+
+
 def model_inputs(df_hist: pd.DataFrame, A: pd.DataFrame) -> pd.DataFrame:
     """Columns identical to training: model_matrix + extra_features + alt features, for the last
     len(A) bars (rolling statistics use the full minute history in df_hist)."""
@@ -358,6 +379,17 @@ class CachedSource:
         self.cache: dict = {}
 
     def _get(self, key, unit_ms, fetch, t0_ms, n):
+        memo = self.cache.get(("memo", key, t0_ms, n))
+        if memo is not None and time.time() - memo[0] < 20:
+            return memo[1]
+        res = self._get_inner(key, unit_ms, fetch, t0_ms, n)
+        now = time.time()
+        for k in [k for k, v in self.cache.items() if k[0] == "memo" and now - v[0] > 120]:
+            del self.cache[k]
+        self.cache[("memo", key, t0_ms, n)] = (now, res)
+        return res
+
+    def _get_inner(self, key, unit_ms, fetch, t0_ms, n):
         t1_ms = t0_ms + n * unit_ms
         c = self.cache.get(key)
         if c is not None:
@@ -402,6 +434,14 @@ class CachedSource:
         return self._get(("p",), 60000, fetch, t0_ms, n_min)
 
     def coinbase_minutes(self, t0_ms, n_min):
+        memo = self.cache.get(("memo", "cb", t0_ms, n_min))
+        if memo is not None and time.time() - memo[0] < 20:
+            return memo[1]
+        out = self._coinbase(t0_ms, n_min)
+        self.cache[("memo", "cb", t0_ms, n_min)] = (time.time(), out)
+        return out
+
+    def _coinbase(self, t0_ms, n_min):
         key = ("cb",)
         c = self.cache.get(key)
         if c is not None:
