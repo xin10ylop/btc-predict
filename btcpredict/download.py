@@ -199,6 +199,10 @@ JOBS = {
     "bnb": lambda d: spot_1s(d, "BNBUSDT"),
     "btcfdusd": lambda d: spot_1s(d, "BTCFDUSD"),
     "btcusdc": lambda d: spot_1s(d, "BTCUSDC"),
+    "ethum": lambda d: um_aggtrades_1s(d, "ETHUSDT"),
+    **{s.lower().replace("usdt", ""): (lambda d, s=s: spot_1s(d, s)) for s in (
+        "ADAUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT", "TRXUSDT", "SUIUSDT", "PEPEUSDT", "SHIBUSDT", "DOTUSDT",
+        "TONUSDT", "NEARUSDT", "BCHUSDT")},
     "metrics": um_metrics,
     "depth": um_bookdepth,
     "premium": lambda d: um_klines_1m(d, kind="premiumIndexKlines"),

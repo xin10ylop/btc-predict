@@ -57,9 +57,15 @@ for c in Pm.columns:
     report(c, Pm[c].values)
 std = Pm / Pm.std()
 report("mean_std", std.mean(1).values)
-if len(Pm.columns) > 1:
-    # structural: futures forecast + basis convergence (if both present)
-    pass
+fcols = [c for c in Pm.columns if c.startswith("lgbm_f")]
+bcols = [c for c in Pm.columns if "basis" in c]
+if a.venue == "s" and fcols and bcols:
+    # structural decomposition: spot return = perp return - change in basis
+    for fc in fcols:
+        report(f"struct[{fc}+{bcols[0]}]", (Pm[fc] + Pm[bcols[0]]).values)
+        scols = [c for c in Pm.columns if c.startswith("lgbm_s")]
+        for sc in scols:
+            report(f"avg[{sc},struct]", (Pm[sc] / Pm[sc].std() + (Pm[fc] + Pm[bcols[0]]) / (Pm[fc] + Pm[bcols[0]]).std()).values)
 # online RLS stacking (causal; uses realized targets with delay h)
 Z = np.column_stack([np.ones(len(Pm)), Pm.values])
 prior = np.r_[0.0, np.ones(Pm.shape[1]) / Pm.shape[1]]

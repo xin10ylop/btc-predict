@@ -67,7 +67,7 @@ def minute_to_seconds(m: pd.DataFrame, t0_ms: int, n: int) -> pd.DataFrame:
         out["o"][last] = mm["c"].values
         out["c"][last] = mm["c"].values
         for k in ("v", "qv", "n", "bv"):
-            out[k][last] = mm[k].values
+            out[k][last] = mm[k].fillna(0.0).values
     return pd.DataFrame(out)
 
 
@@ -279,3 +279,58 @@ def model_inputs(df_hist: pd.DataFrame, A: pd.DataFrame) -> pd.DataFrame:
     out = pd.concat([X.reset_index(drop=True), Xe.reset_index(drop=True), A.astype("float32")], axis=1)
     out.index = df_hist.index[-n:]
     return out
+
+
+# =============================================================================================
+class CachedSource:
+    """Memoizes per-second and per-minute data so that each live step only downloads new data.
+    The newest `fresh` seconds/minutes are always re-fetched (late trades)."""
+
+    def __init__(self, src, fresh_s: int = 3):
+        self.src = src
+        self.fresh_s = fresh_s
+        self.cache: dict = {}
+
+    def _get(self, key, unit_ms, fetch, t0_ms, n):
+        t1_ms = t0_ms + n * unit_ms
+        c = self.cache.get(key)
+        if c is not None:
+            c0, df = c
+            c1 = c0 + len(df) * unit_ms
+            valid_end = c1 - (self.fresh_s * 1000 if unit_ms == 1000 else 2 * unit_ms)
+            if c0 <= t0_ms < valid_end:
+                k_keep = (valid_end - c0) // unit_ms
+                new_n = (t1_ms - valid_end) // unit_ms
+                if new_n > 0:
+                    new = fetch(valid_end, int(new_n))
+                    df = pd.concat([df.iloc[:k_keep], new], ignore_index=True)
+                else:
+                    df = df.iloc[:(t1_ms - c0) // unit_ms]
+                # trim to what we will ever need again
+                drop = max(0, (t0_ms - c0) // unit_ms)
+                df = df.iloc[drop:].reset_index(drop=True)
+                self.cache[key] = (t0_ms, df)
+                return df.iloc[:n].reset_index(drop=True)
+        df = fetch(t0_ms, n)
+        self.cache[key] = (t0_ms, df)
+        return df
+
+    def spot_seconds(self, symbol_key, t0_ms, n):
+        return self._get(("s", symbol_key), 1000, lambda a, k: self.src.spot_seconds(symbol_key, a, k), t0_ms, n)
+
+    def fut_seconds(self, t0_ms, n):
+        return self._get(("f",), 1000, self.src.fut_seconds, t0_ms, n)
+
+    def minutes(self, venue, t0_ms, n_min):
+        def fetch(a, k):
+            m = self.src.minutes(venue, a, k)
+            full = pd.DataFrame({"open_ms": a + 60000 * np.arange(k)})
+            return full.merge(m, on="open_ms", how="left")
+        return self._get(("m", venue), 60000, fetch, t0_ms, n_min)
+
+    def premium(self, t0_ms, n_min):
+        def fetch(a, k):
+            m = self.src.premium(a, k)
+            full = pd.DataFrame({"open_ms": a + 60000 * np.arange(k)})
+            return full.merge(m, on="open_ms", how="left")
+        return self._get(("p",), 60000, fetch, t0_ms, n_min)
