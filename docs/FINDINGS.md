@@ -42,7 +42,21 @@ holdout results are in the README.
   removed. The core/satellite + online-RLS architecture was built so that the next such break is
   absorbed within days (in that March it recovered IC from 0.015 to 0.032).
 * **The "alt-swarm +17%" result.** Once FDUSD was removed, the 5-coin swarm added ≈ 0 to the perp
-  model. The wider 17-coin swarm and the ETH perp are re-tested separately.
+  model (IC 0.053 vs 0.052). The cross-asset signals that *did* survive are the ones with broad,
+  diversified sources: the Coinbase premium, the 17-coin swarm and the ETH perp ("satellite v2").
+  * On the three tuning DEV months they add +0.008 IC to the perp model and +0.007 to spot.
+    The paired day-block bootstrap gives p < 0.001 for both.
+  * On the three **untouched** confirmation months the satellite beats the core on every target:
+
+    | target | core IC | satellite IC |
+    |---|---|---|
+    | perp +1m | 0.039 | 0.050 |
+    | perp +5m | 0.022 | 0.028 |
+    | spot +1m | 0.049 | 0.060 |
+    | spot +5m | 0.028 | 0.032 |
+
+  * Its gains hold up in March 2026, the month the venue structure broke: perp +1m 0.050 vs
+    0.038 for the core.
 * **1-second temporal conv net (TCN)** on 180 s of multi-venue sequences. It matches LightGBM's
   hit rate but has a lower raw-return IC (0.040 vs 0.052). It is 79% correlated with LightGBM,
   and adding it *reduces* IC (−0.0036, day-block-bootstrap 95% CI excludes 0). This matches the
@@ -63,6 +77,31 @@ holdout results are in the README.
   crypto-group IC ≈ 0.037 vs 0.045 for DLinear). The local Kronos benchmark was not run, because
   executing code cloned from GitHub was blocked in this environment.
   `scripts/bench_foundation.py` is ready if you want to run it yourself.
+
+## 2b. The adaptive layer: where online learning helps and where it hurts
+
+The ensemble re-weights [core, satellite] every minute from realized outcomes. Three versions were
+compared on two pre-holdout datasets:
+* the DEV months, which contain the FDUSD break;
+* the untouched confirmation months, which contain no break.
+
+| version | perp +1m, break months | perp +1m, normal months | perp +5m, normal months |
+|---|---|---|---|
+| satellite alone | 0.0611 | **0.0503** | **0.0279** |
+| plain RLS, 2-day half-life, with intercept | 0.0644 | 0.0476 | 0.0193 |
+| **discounted ridge, persistent prior "trust satellite", no intercept** | **0.0655** | 0.0495 | 0.0247 |
+
+Three things follow from this table:
+1. **Use a persistent prior.** Plain RLS forgets its prior and chases noise: at IC ≈ 0.05, two
+   days of data carry very little evidence about the right weights. The persistent prior moves
+   weight to the core only when the evidence accumulates, and it still rescued the FDUSD month
+   (0.015 → 0.033).
+2. **Drop the intercept.** An online intercept is a 3-day "recent drift" forecast, and BTC's
+   multi-day drift has no 1–5 minute predictive value. Removing it helped everywhere.
+3. **Adapt only at 1 minute.** At 5 minutes, consecutive outcomes overlap by 80%. The effective
+   sample is about 5× smaller than it looks, so online weights become noise and the 5-minute
+   satellite never broke in the first place. **Final rule: adaptive at h = 1, satellite-only
+   at h ≥ 2.**
 
 ## 3. When is BTC most predictable? (DEV months)
 

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .config import MODELS, ROOT
-from .online import OnlineRLS
+from .online import OnlineRLS, PriorRLS
 
 
 class Predictor:
@@ -29,7 +29,10 @@ class Predictor:
                          for k, m in self.meta["targets"].items()}
         self.state_file = state_file or (ROOT / "logs" / f"rls_state_{variant}.json")
         saved = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}
-        self.rls = {k: OnlineRLS.from_state(saved.get(k, m["rls_state"])) for k, m in self.meta["targets"].items()}
+        self.rls = {}
+        for k, m in self.meta["targets"].items():
+            st = saved.get(k, m["rls_state"])
+            self.rls[k] = PriorRLS.from_state(st) if st.get("type") == "prior" else OnlineRLS.from_state(st)
 
     @property
     def uses_futures(self) -> bool:
@@ -47,7 +50,7 @@ class Predictor:
         rows = []
         for key, m in self.meta["targets"].items():
             zc, zs = raw[key]["core"], raw[key]["sat"]
-            z = np.array([self.rls[key].predict([1.0, a, b]) for a, b in zip(zc, zs)])
+            z = np.array([self.rls[key].predict(self._x(key, a, b)) for a, b in zip(zc, zs)])
             h = m["h"]
             scale = sigma * np.sqrt(h)
             a, bb = m["calib"]
@@ -65,8 +68,12 @@ class Predictor:
                              "hist_hit_at_conf": dec[min(int(conf[i] // 10), len(dec) - 1)]})
         return pd.DataFrame(rows)
 
+    def _x(self, key, z_core, z_sat):
+        # layouts: [core, sat] (current) or [1, core, sat] (older artifacts)
+        return [z_core, z_sat] if len(self.rls[key].w) == 2 else [1.0, z_core, z_sat]
+
     def update(self, key: str, z_core: float, z_sat: float, realized_z: float):
-        self.rls[key].update([1.0, z_core, z_sat], realized_z)
+        self.rls[key].update(self._x(key, z_core, z_sat), realized_z)
 
     def save_state(self):
         self.state_file.parent.mkdir(exist_ok=True)

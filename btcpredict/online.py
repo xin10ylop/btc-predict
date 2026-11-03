@@ -64,3 +64,57 @@ def rls_stack(Z: np.ndarray, y: np.ndarray, horizon: int, half_life: float = 288
         if s >= 0 and valid[s]:
             m.update(Z[s], y[s])
     return (out, m) if return_model else out
+
+
+class PriorRLS:
+    """Discounted ridge with a PERSISTENT prior:
+        w_t = argmin  sum_s lam^(t-s) (y_s - x_s.w)^2  +  kappa * ||w - w0||^2
+    Unlike plain RLS (whose initial prior is forgotten), the pull toward w0 never decays, so the
+    weights only leave the prior when recent evidence clearly contradicts it (e.g. a venue break)."""
+
+    def __init__(self, k: int, half_life: float = 10080.0, kappa: float = 3000.0, prior=None):
+        self.lam = 0.5 ** (1.0 / half_life)
+        self.kappa = kappa
+        self.w0 = np.zeros(k) if prior is None else np.asarray(prior, float).copy()
+        self.A = np.zeros((k, k))
+        self.b = np.zeros(k)
+        self.k = k
+        self.n = 0
+        self.w = self.w0.copy()
+
+    def predict(self, x) -> float:
+        return float(np.nan_to_num(np.asarray(x, float)) @ self.w)
+
+    def update(self, x, y: float, clip: float = 6.0, refresh: int = 30):
+        if not np.isfinite(y):
+            return
+        x = np.nan_to_num(np.asarray(x, float))
+        y = float(np.clip(y, -clip, clip))
+        self.A = self.lam * self.A + np.outer(x, x)
+        self.b = self.lam * self.b + x * y
+        self.n += 1
+        if self.n % refresh == 0:
+            self.w = np.linalg.solve(self.A + self.kappa * np.eye(self.k), self.b + self.kappa * self.w0)
+
+    def state(self) -> dict:
+        return {"type": "prior", "w": self.w.tolist(), "A": self.A.tolist(), "b": self.b.tolist(), "lam": self.lam,
+                "kappa": self.kappa, "w0": self.w0.tolist(), "n": self.n}
+
+    @classmethod
+    def from_state(cls, s: dict) -> "PriorRLS":
+        o = cls(len(s["w"]))
+        o.w = np.asarray(s["w"], float); o.A = np.asarray(s["A"], float); o.b = np.asarray(s["b"], float)
+        o.lam, o.kappa, o.w0, o.n = s["lam"], s["kappa"], np.asarray(s["w0"], float), s["n"]
+        return o
+
+
+def prior_stack(Z, y, horizon, half_life=10080.0, kappa=3000.0, prior=None, return_model=False):
+    n, k = Z.shape
+    m = PriorRLS(k, half_life, kappa, prior)
+    out = np.full(n, np.nan)
+    for t in range(n):
+        out[t] = m.predict(Z[t])
+        s = t - horizon
+        if s >= 0:
+            m.update(Z[s], y[s])
+    return (out, m) if return_model else out

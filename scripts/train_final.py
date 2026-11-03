@@ -3,8 +3,9 @@
 Architecture per target (venue, horizon):
   CORE      LightGBM on BTC spot/perp/ETH microstructure features (robust)
   SATELLITE LightGBM on core + cross-venue/alt-coin features (stronger, more fragile)
-  ENSEMBLE  online RLS (half-life 2 days) re-weighting [1, core, satellite] every minute from
-            realized outcomes -> adapts to venue/regime breaks between retrains
+  ENSEMBLE  online discounted ridge (half-life 3 days) re-weighting [1, core, satellite] every
+            minute from realized outcomes, shrunk toward "trust the satellite" by a persistent
+            prior -> falls back to the core within days if a cross-venue relationship breaks
 
 For every variant/target:
   1. walk-forward over the 6 HOLDOUT months (never used for any design decision), monthly retrain
@@ -37,7 +38,8 @@ ap.add_argument("--venues", default="f,s")
 ap.add_argument("--rounds", type=int, default=400)
 ap.add_argument("--params", default="{}")
 ap.add_argument("--months", default="holdout")
-ap.add_argument("--half_life", type=float, default=2880)
+ap.add_argument("--half_life", type=float, default=4320)
+ap.add_argument("--kappa", type=float, default=10.0, help="strength of the persistent prior 'trust the satellite'")
 ap.add_argument("--block", type=int, default=2, help="test months per retrain")
 ap.add_argument("--skip_final", action="store_true")
 ap.add_argument("--extra_x", default="Xcb.parquet,Xalt2.parquet", help="comma list of extra feature parquet files in data/features")
@@ -100,9 +102,13 @@ for variant in a.variants.split(","):
                 fps[part] = M.lgbm_factory(params=params, rounds=a.rounds)
                 preds[part] = E.walk_forward(fps[part], X[hc[part]], yz, folds, verbose=False)
             m = preds["core"].notna().values & preds["sat"].notna().values
-            Z = np.column_stack([np.ones(m.sum()), preds["core"].values[m], preds["sat"].values[m]])
-            ens, rls = online.rls_stack(Z, yz.values[m], horizon=h, half_life=a.half_life, ridge=1e4,
-                                        prior=np.r_[0.0, 0.5, 0.5], return_model=True)
+            # inputs [core, sat] without intercept (a drifting intercept is a 3-day trend forecast: noise).
+            # h=1: adaptive (nearly independent outcomes, fragile seconds-scale lead-lag);
+            # h>=2: frozen at the satellite (overlapping outcomes make online weights too noisy).
+            Z = np.column_stack([preds["core"].values[m], preds["sat"].values[m]])
+            kappa = a.kappa if h == 1 else 1e12
+            ens, rls = online.prior_stack(Z, yz.values[m], horizon=h, half_life=a.half_life, kappa=kappa,
+                                          prior=np.r_[0.0, 1.0], return_model=True)
             ens_s = pd.Series(np.nan, index=df.index); ens_s[m] = ens
             out = pd.DataFrame({"ts": df["ts"][m], "core": preds["core"][m], "sat": preds["sat"][m], "pred": ens, "scale": scale[m]})
             out.to_parquet(PRED / f"final_{variant}_{key}_{mtag}.parquet")
