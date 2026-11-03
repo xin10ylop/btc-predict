@@ -15,17 +15,28 @@ from .config import MODELS, ROOT
 from .online import OnlineRLS, PriorRLS
 
 
+def _load_booster(path: Path):
+    """Load a LightGBM text model, falling back to the gzip-compressed copy shipped in the repo."""
+    import gzip
+
+    import lightgbm as lgb
+
+    if path.exists():
+        return lgb.Booster(model_file=str(path))
+    gz = path.with_name(path.name + ".gz")
+    with gzip.open(gz, "rt") as fh:
+        return lgb.Booster(model_str=fh.read())
+
+
 class Predictor:
     def __init__(self, variant: str = "full", model_dir: Path = MODELS, state_file: Path | None = None):
-        import lightgbm as lgb
-
         self.dir = Path(model_dir)
         meta = json.loads((self.dir / "meta.json").read_text())
         if variant not in meta:
             raise ValueError(f"variant {variant!r} not trained; available: {list(meta)}")
         self.meta = meta[variant]
         self.variant = variant
-        self.boosters = {k: {part: lgb.Booster(model_file=str(self.dir / f)) for part, f in m["files"].items()}
+        self.boosters = {k: {part: _load_booster(self.dir / f) for part, f in m["files"].items()}
                          for k, m in self.meta["targets"].items()}
         self.state_file = state_file or (ROOT / "logs" / f"rls_state_{variant}.json")
         saved = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}

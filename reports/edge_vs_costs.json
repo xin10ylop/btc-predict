@@ -1,0 +1,32 @@
+{
+ "f1": {
+  "top100%": {
+   "edge_bp_d0": 0.302,
+   "edge_bp_d2": 0.17,
+   "edge_bp_d5": 0.116,
+   "trades_per_day": 1440.0,
+   "avg_abs_move_bp": 3.34
+  },
+  "top10%": {
+   "edge_bp_d0": 0.611,
+   "edge_bp_d2": 0.391,
+   "edge_bp_d5": 0.281,
+   "trades_per_day": 144.0,
+   "avg_abs_move_bp": 2.49
+  },
+  "top1%": {
+   "edge_bp_d0": 0.9,
+   "edge_bp_d2": 0.641,
+   "edge_bp_d5": 0.52,
+   "trades_per_day": 14.4,
+   "avg_abs_move_bp": 2.15
+  },
+  "top0.1%": {
+   "edge_bp_d0": 0.98,
+   "edge_bp_d2": 0.581,
+   "edge_bp_d5": 0.37,
+   "trades_per_day": 1.4,
+   "avg_abs_move_bp": 2.1
+  }
+ }
+}
