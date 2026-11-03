@@ -351,12 +351,15 @@ spot+5m   0.512    +0.54 [  -15.6,  +15.8] [   77,271.5,   77,514.4]     34     
 | `btcpredict/altfeat.py` | alt-coin swarm, cross-book, ETH-perp features |
 | `btcpredict/coinbase.py` | Coinbase premium features |
 | `btcpredict/panel.py`, `features.py` | minute-level panel, scale-free model matrix, targets |
+| `btcpredict/subminute.py` | 10 s / 15 s targets (and delivery-delay variants) from per-second prices |
 | `btcpredict/evaluate.py` | purged walk-forward, metrics, paired day-block bootstrap |
 | `btcpredict/online.py` | online discounted ridge (adaptive layer) |
 | `btcpredict/live.py`, `run_live.py`, `predictor.py` | live data sources, caching, forecaster CLI |
 | `scripts/run_model.py` | single walk-forward experiment (cached OOS predictions) |
 | `scripts/train_final.py` | holdout evaluation + production models + calibration |
 | `scripts/check_live_parity.py` | proves live features and model scores == training |
+| `scripts/live_skew_now.py` | live-at-forecast-time vs final-data feature/score comparison (training/serving skew) |
+| `scripts/check_live_skew.py` | next-day check of logged live features against the official daily files |
 | `scripts/monthly_refresh.sh` | pull new data, rebuild features, retrain production models (~1–1.5 h) |
 | `scripts/experiments/` | the research experiments behind docs/FINDINGS.md (every run's args are in `reports/results.jsonl`) |
 | `tests/` | unit tests for the core math (`python -m pytest -q tests`) |
