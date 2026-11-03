@@ -174,7 +174,33 @@ It is useful as:
 * calibrated probabilities for short-horizon up/down markets;
 * an input to slower strategies.
 
-LIVE_SECTION
+### Live forward test (real market, after all training data)
+
+The spot-only model ran live on 2026-11-03 from 15:26 to 16:41 UTC: 75 consecutive forecasts,
+delivered at a median of 3.8 s after each bar close (p90 5.2 s). That is genuinely
+out-of-sample data, collected after every model was frozen.
+
+| horizon | n | hit rate | IC ± s.e. | 80% band coverage |
+|---|---|---|---|---|
+| +10s | 67 | 58.2% | 0.31 ± 0.13 | 67% |
+| +15s | 71 | 50.7% | 0.24 ± 0.12 | 73% |
+| +1m | 74 | 58.1% | 0.20 ± 0.12 | 76% |
+| +2m | 75 | 56.0% | 0.18 ± 0.12 | 65% |
+| +3m | 74 | 55.4% | 0.15 ± 0.12 | 69% |
+| +4m | 73 | 50.7% | 0.15 ± 0.12 | 70% |
+| +5m | 72 | 52.8% | 0.13 ± 0.12 | 75% |
+
+How to read this table:
+* All 7 ICs are positive, and the +10s IC is 2.5 standard errors above zero. That is
+  consistent with the holdout.
+* 75 overlapping minutes cannot pin down the true level. The s.e. values understate the
+  uncertainty, so treat these numbers as a sanity check, not a performance claim.
+* The afternoon was trending, and the bands under-covered (see *Regime-aware uncertainty*).
+  This run also predates the New-York-hour and variance-ratio band factors.
+* An earlier live run (13:51–14:33 UTC) used a data path with training/serving skew. It was
+  discarded, the bug was fixed, and the run was repeated; see below. Score your own runs with
+  `python scripts/score_live_log.py`.
+
 
 
 ## Built for regime change

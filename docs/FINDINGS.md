@@ -215,6 +215,16 @@ kept as `logs/predictions_run1_coinbase_skew.jsonl`. **Lesson: parity on histori
 necessary but not sufficient. Also check live-at-forecast-time against final data, because
 exchanges revise and publish late.**
 
+## 3g. Live forward test (2026-11-03, 15:26–16:41 UTC, spot-only model)
+
+Seventy-five forecasts were made with the fixed data path, delivered at a median of 3.8 s after
+each bar close. Results:
+* hit rate: 58.2% at +10s, 58.1% at +1m, 52.8% at +5m;
+* IC positive at all 7 horizons (0.13–0.31; +10s is 2.5 s.e. above zero);
+* 80% band coverage 65–76%, during a trending afternoon.
+
+This is consistent with the holdout, but far too short to estimate the level precisely.
+
 ## 4. Overfitting safeguards actually used
 
 1. A 6-month **holdout** (2026-05 → 2026-10) that no design decision looked at.
